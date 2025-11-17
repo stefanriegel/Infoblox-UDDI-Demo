@@ -1,0 +1,445 @@
+name: "UDDI - Automated Cleanup"
+
+on:
+  schedule:
+    # Runs at midnight GMT+2 (22:00 UTC) every day
+    - cron: '0 22 * * *'
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type "destroy" to confirm cleanup'
+        required: true
+        type: string
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  cleanup_dns:
+    name: "Cleanup DNS records"
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: live/demos/dns
+    env:
+      BLOXONE_HOST: ${{ vars.BLOXONE_HOST }}
+      BLOXONE_API_KEY: ${{ secrets.BLOXONE_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Confirm manual cleanup
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ inputs.confirm }}" != "destroy" ]; then
+            echo "❌ Cleanup cancelled - confirmation not provided"
+            exit 1
+          fi
+          echo "✅ Cleanup confirmed"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/dns/.terraform
+            live/demos/dns/.terraform.lock.hcl
+            live/demos/dns/terraform.tfstate
+            live/demos/dns/terraform.tfstate.backup
+          key: tfstate-${{ github.workflow }}
+          restore-keys: |
+            tfstate-
+
+      - name: Find all demo records via API
+        id: find_records
+        run: |
+          echo "Querying UDDI API for all demo records (tag: demo=true)..."
+          
+          # Get zone ID first
+          ZONE_RESPONSE=$(curl -s -X GET \
+            -H "Authorization: Token ${BLOXONE_API_KEY}" \
+            "${BLOXONE_HOST}/api/ddi/v1/dns/auth_zone?_filter=fqdn==%22virtualife.pro.%22")
+          
+          ZONE_ID=$(echo "${ZONE_RESPONSE}" | jq -r '.results[0].id' 2>/dev/null)
+          
+          if [ -z "${ZONE_ID}" ] || [ "${ZONE_ID}" == "null" ]; then
+            echo "⚠️ Could not find zone virtualife.pro."
+            echo "has_records=false" >> $GITHUB_OUTPUT
+            echo "record_count=0" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "Zone ID: ${ZONE_ID}"
+          echo ""
+          
+          # Query ALL records in zone (API doesn't support tag filtering)
+          echo "Fetching all records in zone..."
+          ALL_RECORDS=$(curl -s -X GET \
+            -H "Authorization: Token ${BLOXONE_API_KEY}" \
+            "${BLOXONE_HOST}/api/ddi/v1/dns/record?_filter=zone==%22${ZONE_ID}%22&_fields=id,name_in_zone,type,rdata,tags,comment")
+          
+          # Filter locally for records with demo=true tag OR Terraform-managed comment
+          DEMO_RECORDS=$(echo "${ALL_RECORDS}" | jq '.results | map(select(
+            (.tags.demo == "true") or 
+            (.comment != null and (.comment | contains("Terraform-managed")))
+          ))')
+          
+          echo "{\"results\": ${DEMO_RECORDS}}" > /tmp/demo_records.json
+          
+          RECORD_COUNT=$(echo "${DEMO_RECORDS}" | jq -r 'length' 2>/dev/null || echo 0)
+          
+          echo "Found ${RECORD_COUNT} demo records to delete"
+          
+          if [ "${RECORD_COUNT}" -gt 0 ]; then
+            echo "Demo records:"
+            echo "${DEMO_RECORDS}" | jq -r '.[] | "  - \(.name_in_zone) (\(.type))"'
+            echo "has_records=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_records=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "record_count=${RECORD_COUNT}" >> $GITHUB_OUTPUT
+
+      - name: Delete demo records via API
+        if: steps.find_records.outputs.has_records == 'true'
+        run: |
+          set +e  # Don't exit on error, we want to try all deletions
+          
+          RECORD_IDS=$(jq -r '.results[].id' /tmp/demo_records.json 2>/dev/null)
+          
+          echo "Found records to delete:"
+          echo "${RECORD_IDS}"
+          echo ""
+          
+          DELETED=0
+          FAILED=0
+          
+          for RECORD_ID in ${RECORD_IDS}; do
+            echo "Deleting ${RECORD_ID}..."
+            HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/delete_response.json \
+              -X DELETE \
+              -H "Authorization: Token ${BLOXONE_API_KEY}" \
+              "${BLOXONE_HOST}/api/ddi/v1/${RECORD_ID}")
+            
+            if [ "${HTTP_CODE}" -eq 200 ] || [ "${HTTP_CODE}" -eq 204 ]; then
+              echo "✅ Deleted successfully (HTTP ${HTTP_CODE})"
+              DELETED=$((DELETED + 1))
+            elif [ "${HTTP_CODE}" -eq 404 ]; then
+              echo "ℹ️ Record already deleted (HTTP 404)"
+              DELETED=$((DELETED + 1))
+            else
+              echo "❌ Failed to delete (HTTP ${HTTP_CODE})"
+              cat /tmp/delete_response.json 2>/dev/null || echo "No response body"
+              FAILED=$((FAILED + 1))
+            fi
+            echo ""
+          done
+          
+          echo "Summary: ${DELETED} deleted, ${FAILED} failed"
+          
+          # Clean up state file
+          if [ ${FAILED} -eq 0 ]; then
+            echo "All resources deleted, removing state file"
+            rm -f terraform.tfstate terraform.tfstate.backup
+          fi
+          
+          # Exit with error if any deletions failed
+          if [ ${FAILED} -gt 0 ]; then
+            echo "⚠️ Some resources failed to delete"
+            exit 1
+          fi
+
+      - name: Job Summary
+        if: always()
+        run: |
+          echo "## 🗑️ Automated Cleanup Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Strategy:** Tag-based cleanup (finds all records with \`demo=true\` tag)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Trigger** | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Demo Records Found** | ${{ steps.find_records.outputs.record_count || '0' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.find_records.outputs.has_records }}" == "true" ]; then
+            echo "> ✅ **Status**: All demo records destroyed successfully" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "> ℹ️ **Status**: No demo records found - nothing to cleanup" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*Scheduled cleanup runs daily at 00:00 GMT+2 (22:00 UTC)*" >> $GITHUB_STEP_SUMMARY
+
+  cleanup_vpc:
+    name: "Cleanup VPC/VNet resources"
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      BLOXONE_HOST: ${{ vars.BLOXONE_HOST }}
+      BLOXONE_API_KEY: ${{ secrets.BLOXONE_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Confirm manual cleanup
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          if [ "${{ inputs.confirm }}" != "destroy" ]; then
+            echo "❌ Cleanup cancelled - confirmation not provided"
+            exit 1
+          fi
+          echo "✅ Cleanup confirmed"
+
+      - name: Find demo subnets in UDDI IPAM
+        id: find_subnets
+        run: |
+          echo "Querying UDDI IPAM for demo subnets (tag: demo=true)..."
+          
+          # Query all subnets
+          ALL_SUBNETS=$(curl -s -X GET \
+            -H "Authorization: Token ${BLOXONE_API_KEY}" \
+            "${BLOXONE_HOST}/api/ddi/v1/ipam/subnet?_fields=id,address,cidr,name,tags,comment")
+          
+          # Filter locally for subnets with demo=true tag
+          DEMO_SUBNETS=$(echo "${ALL_SUBNETS}" | jq '.results | map(select(
+            (.tags.demo == "true") and 
+            ((.tags.cloud == "aws") or (.tags.cloud == "azure") or (.tags.cloud == "gcp"))
+          ))')
+          
+          echo "{\"results\": ${DEMO_SUBNETS}}" > /tmp/demo_subnets.json
+          
+          SUBNET_COUNT=$(echo "${DEMO_SUBNETS}" | jq -r 'length' 2>/dev/null || echo 0)
+          
+          echo "Found ${SUBNET_COUNT} demo subnets to release"
+          
+          if [ "${SUBNET_COUNT}" -gt 0 ]; then
+            echo "Demo subnets:"
+            echo "${DEMO_SUBNETS}" | jq -r '.[] | "  - \(.name) (\(.address)/\(.cidr)) [\(.tags.cloud)]"'
+            echo "has_subnets=true" >> $GITHUB_OUTPUT
+          else
+            echo "has_subnets=false" >> $GITHUB_OUTPUT
+          fi
+          
+          echo "subnet_count=${SUBNET_COUNT}" >> $GITHUB_OUTPUT
+
+      - name: Cleanup AWS VPCs via AWS CLI
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+        run: |
+          set +e
+          
+          echo "🔍 Finding AWS VPCs with Demo=true tag..."
+          
+          # Get all regions to search (search common regions)
+          REGIONS="eu-central-1 us-east-1 us-west-2 ap-southeast-1"
+          
+          for REGION in ${REGIONS}; do
+            echo "Checking region: ${REGION}"
+            
+            # Find VPCs with ManagedBy=terraform tag (more reliable than Demo tag)
+            VPC_IDS=$(aws ec2 describe-vpcs \
+              --region ${REGION} \
+              --filters "Name=tag:ManagedBy,Values=terraform" "Name=tag:Demo,Values=true" \
+              --query 'Vpcs[].VpcId' \
+              --output text 2>/dev/null)
+            
+            if [ -z "${VPC_IDS}" ]; then
+              continue
+            fi
+            
+            for VPC_ID in ${VPC_IDS}; do
+              echo "🗑️ Deleting VPC: ${VPC_ID} in ${REGION}"
+              
+              # Get VPC name for logging
+              VPC_NAME=$(aws ec2 describe-vpcs \
+                --region ${REGION} \
+                --vpc-ids ${VPC_ID} \
+                --query 'Vpcs[0].Tags[?Key==`Name`].Value' \
+                --output text 2>/dev/null)
+              
+              echo "  Name: ${VPC_NAME}"
+              
+              # Delete Internet Gateways
+              IGW_IDS=$(aws ec2 describe-internet-gateways \
+                --region ${REGION} \
+                --filters "Name=attachment.vpc-id,Values=${VPC_ID}" \
+                --query 'InternetGateways[].InternetGatewayId' \
+                --output text 2>/dev/null)
+              
+              for IGW_ID in ${IGW_IDS}; do
+                echo "  Detaching and deleting IGW: ${IGW_ID}"
+                aws ec2 detach-internet-gateway \
+                  --region ${REGION} \
+                  --internet-gateway-id ${IGW_ID} \
+                  --vpc-id ${VPC_ID} 2>/dev/null || true
+                aws ec2 delete-internet-gateway \
+                  --region ${REGION} \
+                  --internet-gateway-id ${IGW_ID} 2>/dev/null || true
+              done
+              
+              # Delete VPC
+              echo "  Deleting VPC: ${VPC_ID}"
+              aws ec2 delete-vpc \
+                --region ${REGION} \
+                --vpc-id ${VPC_ID} 2>/dev/null && echo "  ✅ VPC deleted" || echo "  ⚠️ VPC deletion failed"
+              
+              echo ""
+            done
+          done
+
+      - name: Cleanup Azure VNets via Azure CLI
+        env:
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+        run: |
+          set +e
+          
+          echo "🔍 Finding Azure Resource Groups with demo=true tag..."
+          
+          # Login to Azure
+          az login --service-principal \
+            --username ${ARM_CLIENT_ID} \
+            --password ${ARM_CLIENT_SECRET} \
+            --tenant ${ARM_TENANT_ID} --output none 2>/dev/null || true
+          
+          az account set --subscription ${ARM_SUBSCRIPTION_ID} 2>/dev/null || true
+          
+          # Find resource groups with demo=true tag
+          RG_NAMES=$(az group list \
+            --tag demo=true \
+            --query '[].name' \
+            --output tsv 2>/dev/null)
+          
+          if [ -z "${RG_NAMES}" ]; then
+            echo "No Azure Resource Groups with demo=true found"
+          else
+            for RG_NAME in ${RG_NAMES}; do
+              echo "🗑️ Deleting Resource Group: ${RG_NAME}"
+              az group delete \
+                --name ${RG_NAME} \
+                --yes \
+                --no-wait 2>/dev/null && echo "  ✅ Deletion initiated" || echo "  ⚠️ Deletion failed"
+            done
+          fi
+
+      - name: Cleanup GCP VPCs via gcloud CLI
+        env:
+          GOOGLE_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
+          set +e
+          
+          echo "🔍 Finding GCP VPCs with description containing 'UDDI'..."
+          
+          # Authenticate with GCP
+          echo "${GOOGLE_CREDENTIALS}" | gcloud auth activate-service-account --key-file=- 2>/dev/null || true
+          gcloud config set project ${GCP_PROJECT_ID} 2>/dev/null || true
+          
+          # List all VPC networks and filter by description
+          VPC_NAMES=$(gcloud compute networks list \
+            --filter="description:UDDI" \
+            --format="value(name)" 2>/dev/null)
+          
+          if [ -z "${VPC_NAMES}" ]; then
+            echo "No GCP VPCs with UDDI description found"
+          else
+            for VPC_NAME in ${VPC_NAMES}; do
+              echo "🗑️ Deleting VPC: ${VPC_NAME}"
+              
+              # Delete all subnets first
+              SUBNETS=$(gcloud compute networks subnets list \
+                --network=${VPC_NAME} \
+                --format="value(name,region)" 2>/dev/null)
+              
+              while read -r SUBNET_INFO; do
+                SUBNET_NAME=$(echo ${SUBNET_INFO} | awk '{print $1}')
+                SUBNET_REGION=$(echo ${SUBNET_INFO} | awk '{print $2}')
+                if [ -n "${SUBNET_NAME}" ]; then
+                  echo "  Deleting subnet: ${SUBNET_NAME}"
+                  gcloud compute networks subnets delete ${SUBNET_NAME} \
+                    --region=${SUBNET_REGION} \
+                    --quiet 2>/dev/null || true
+                fi
+              done <<< "${SUBNETS}"
+              
+              # Delete VPC
+              echo "  Deleting VPC network: ${VPC_NAME}"
+              gcloud compute networks delete ${VPC_NAME} \
+                --quiet 2>/dev/null && echo "  ✅ VPC deleted" || echo "  ⚠️ VPC deletion failed"
+              
+              echo ""
+            done
+          fi
+
+      - name: Delete demo subnets from UDDI
+        if: steps.find_subnets.outputs.has_subnets == 'true'
+        run: |
+          set +e
+          
+          SUBNET_IDS=$(jq -r '.results[].id' /tmp/demo_subnets.json 2>/dev/null)
+          
+          echo "Cleaning up UDDI IPAM subnets..."
+          echo ""
+          
+          DELETED=0
+          FAILED=0
+          
+          for SUBNET_ID in ${SUBNET_IDS}; do
+            echo "Deleting ${SUBNET_ID}..."
+            HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/delete_response.json \
+              -X DELETE \
+              -H "Authorization: Token ${BLOXONE_API_KEY}" \
+              "${BLOXONE_HOST}/api/ddi/v1/${SUBNET_ID}")
+            
+            if [ "${HTTP_CODE}" -eq 200 ] || [ "${HTTP_CODE}" -eq 204 ]; then
+              echo "✅ Deleted successfully (HTTP ${HTTP_CODE})"
+              DELETED=$((DELETED + 1))
+            elif [ "${HTTP_CODE}" -eq 404 ]; then
+              echo "ℹ️ Subnet already deleted (HTTP 404)"
+              DELETED=$((DELETED + 1))
+            else
+              echo "❌ Failed to delete (HTTP ${HTTP_CODE})"
+              cat /tmp/delete_response.json 2>/dev/null || echo "No response body"
+              FAILED=$((FAILED + 1))
+            fi
+            echo ""
+          done
+          
+          echo "Summary: ${DELETED} deleted, ${FAILED} failed"
+
+      - name: VPC Cleanup Summary
+        if: always()
+        run: |
+          echo "## 🗑️ VPC/VNet Cleanup Report" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Strategy:** Tag-based cleanup (demo=true + cloud provider tags)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Trigger** | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Demo Subnets Found** | ${{ steps.find_subnets.outputs.subnet_count || '0' }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ steps.find_subnets.outputs.has_subnets }}" == "true" ]; then
+            echo "> ✅ **Status**: All demo VPC/VNet resources destroyed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "> ℹ️ **Status**: No demo VPC/VNet resources found" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*Scheduled cleanup runs daily at 00:00 GMT+2 (22:00 UTC)*" >> $GITHUB_STEP_SUMMARY

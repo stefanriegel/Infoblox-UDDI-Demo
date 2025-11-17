@@ -1,0 +1,11 @@
+# Example values (do NOT put secrets here)
+zone_fqdn   = "virtualife.pro."
+record_name = "www"
+record_type = "A"
+record_value = "203.0.113.10"
+ttl = 120
+
+# Secrets are provided by GitHub Environment 'dev' via variables/secrets:
+# - var.bloxone_host          <- from env var BLOXONE_HOST (optional; defaults to https://csp.infoblox.com)
+# - var.bloxone_api_key       <- from secret BLOXONE_API_KEY
+# - var.cloudflare_account_id <- from env var CF_ACCOUNT_ID

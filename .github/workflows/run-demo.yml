@@ -1,0 +1,559 @@
+name: "UDDI - Multi-Cloud DNS"
+
+on:
+  workflow_dispatch:
+    inputs:
+      zone_fqdn:
+        description: "Authoritative zone FQDN (must end with a dot)"
+        default: "virtualife.pro."
+        required: true
+        type: string
+      record_name:
+        description: "Record name (label). Use empty for apex."
+        default: "www"
+        required: true
+        type: string
+      record_type:
+        description: "DNS record type"
+        required: true
+        type: choice
+        options: [A, AAAA, TXT, CNAME]
+        default: A
+      record_value:
+        description: "A/AAAA=IP, CNAME=target FQDN (with dot), TXT=content"
+        default: "203.0.113.10"
+        required: true
+        type: string
+      ttl:
+        description: "TTL seconds"
+        default: 120
+        required: true
+        type: number
+      orange_cloud:
+        description: 'Orange Cloud'
+        required: false
+        type: boolean
+        default: false
+      action:
+        description: "Terraform action"
+        required: true
+        type: choice
+        options: [apply, destroy]
+        default: apply
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  demo:
+    name: "Deploy DNS via Infoblox UDDI → ${{ inputs.record_type }} Record"
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: live/demos/dns
+    env:
+      BLOXONE_HOST: ${{ vars.BLOXONE_HOST }}
+      BLOXONE_API_KEY: ${{ secrets.BLOXONE_API_KEY }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+
+      - name: Cache Terraform state and plugins (local backend)
+        uses: actions/cache@v4
+        with:
+          path: |
+            live/demos/dns/.terraform
+            live/demos/dns/.terraform.lock.hcl
+            live/demos/dns/terraform.tfstate
+            live/demos/dns/terraform.tfstate.backup
+          key: tfstate-${{ github.workflow }}-${{ github.ref_name }}-${{ inputs.zone_fqdn }}-${{ inputs.record_name }}-${{ inputs.record_type }}
+
+      - name: Terraform Init
+        run: terraform init -input=false -no-color
+
+      - name: Terraform Validate
+        run: terraform validate -no-color
+
+      - name: Terraform Plan
+        id: plan
+        run: |
+          terraform plan -input=false -no-color \
+            -var="bloxone_host=${BLOXONE_HOST:-https://csp.infoblox.com}" \
+            -var="bloxone_api_key=${BLOXONE_API_KEY}" \
+            -var="zone_fqdn=${{ inputs.zone_fqdn }}" \
+            -var="record_name=${{ inputs.record_name }}" \
+            -var="record_type=${{ inputs.record_type }}" \
+            -var="record_value=${{ inputs.record_value }}" \
+            -var="ttl=${{ inputs.ttl }}" \
+            -var="orange_cloud=${{ inputs.orange_cloud }}" \
+            -out=tfplan
+
+      - name: Terraform Apply
+        if: ${{ inputs.action == 'apply' }}
+        run: |
+          terraform apply -input=false -auto-approve -no-color tfplan
+          terraform output -json > tfoutputs.json
+
+      - name: Configure Cloudflare Orange Cloud
+        if: ${{ inputs.action == 'apply' && inputs.orange_cloud == true && (inputs.record_type == 'A' || inputs.record_type == 'AAAA' || inputs.record_type == 'CNAME') }}
+        run: |
+          set -e
+          echo "Enabling Cloudflare Orange Cloud for record..."
+          
+          # Extract record ID from Terraform output
+          RECORD_ID=$(jq -r '.record_id.value' tfoutputs.json)
+          echo "Record ID: ${RECORD_ID}"
+          
+          if [ "${RECORD_ID}" == "null" ] || [ -z "${RECORD_ID}" ]; then
+            echo "ERROR: Could not extract record ID from Terraform output"
+            exit 1
+          fi
+          
+          # Get current record to preserve all fields
+          CURRENT_RECORD=$(curl -s -H "Authorization: Token ${BLOXONE_API_KEY}" \
+            "${BLOXONE_HOST}/api/ddi/v1/${RECORD_ID}")
+          
+          echo "Current record fetched"
+          
+          # Update provider_metadata with cloudflare_config
+          UPDATED_RECORD=$(echo "${CURRENT_RECORD}" | jq '.result.provider_metadata = {"cloudflare_config": {"proxied": true}}')
+          
+          # Extract only the fields we need to update
+          UPDATE_PAYLOAD=$(echo "${UPDATED_RECORD}" | jq '.result | {provider_metadata}')
+          
+          echo "Sending PATCH request to enable Cloudflare proxy..."
+          
+          # PATCH the record with updated provider_metadata
+          RESPONSE=$(curl -s -X PATCH \
+            -H "Authorization: Token ${BLOXONE_API_KEY}" \
+            -H "Content-Type: application/json" \
+            -d "${UPDATE_PAYLOAD}" \
+            "${BLOXONE_HOST}/api/ddi/v1/${RECORD_ID}")
+          
+          echo "Response: ${RESPONSE}"
+          
+          # Check if update was successful
+          if echo "${RESPONSE}" | jq -e '.result.provider_metadata.cloudflare_config.proxied == true' > /dev/null; then
+            echo "✅ Cloudflare Orange Cloud enabled successfully"
+          else
+            echo "⚠️ Warning: Orange Cloud may not be enabled. Check response above."
+          fi
+
+      - name: Terraform Destroy
+        if: ${{ inputs.action == 'destroy' }}
+        run: |
+          terraform destroy -input=false -auto-approve -no-color \
+            -var="bloxone_host=${BLOXONE_HOST:-https://csp.infoblox.com}" \
+            -var="bloxone_api_key=${BLOXONE_API_KEY}" \
+            -var="zone_fqdn=${{ inputs.zone_fqdn }}" \
+            -var="record_name=${{ inputs.record_name }}" \
+            -var="record_type=${{ inputs.record_type }}" \
+            -var="record_value=${{ inputs.record_value }}" \
+            -var="ttl=${{ inputs.ttl }}" \
+            -var="orange_cloud=${{ inputs.orange_cloud }}"
+
+      - name: DNS Verification & Cloudflare Status
+        if: ${{ inputs.action == 'apply' }}
+        env:
+          CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+        run: |
+          set -e
+          
+          # Wait for UDDI to Cloudflare sync
+          echo "⏳ Waiting 10 seconds for UDDI → Cloudflare sync..."
+          sleep 10
+          echo ""
+          
+          # Construct FQDN
+          if [ -z "${{ inputs.record_name }}" ]; then
+            FQDN="${{ inputs.zone_fqdn }}"
+          else
+            FQDN="${{ inputs.record_name }}.${{ inputs.zone_fqdn }}"
+          fi
+          FQDN="${FQDN%.}."
+          TYPE="${{ inputs.record_type }}"
+          
+          echo "============================================"
+          echo "🔍 DNS VERIFICATION"
+          echo "============================================"
+          echo ""
+          echo "Record: ${FQDN}"
+          echo "Type: ${TYPE}"
+          echo ""
+          
+          # Dig from multiple nameservers
+          echo "📡 Querying Google DNS (8.8.8.8)..."
+          dig +nocmd +noall +answer -t "${TYPE}" "${FQDN}" @8.8.8.8 | tee dig-google.txt || echo "(no answer)" | tee dig-google.txt
+          if [ ! -s dig-google.txt ]; then
+            echo "(no answer yet - DNS propagation in progress)" | tee dig-google.txt
+          fi
+          cat dig-google.txt
+          echo ""
+          
+          echo "📡 Querying Cloudflare DNS (1.1.1.1)..."
+          dig +nocmd +noall +answer -t "${TYPE}" "${FQDN}" @1.1.1.1 | tee dig-cloudflare.txt || echo "(no answer)" | tee dig-cloudflare.txt
+          if [ ! -s dig-cloudflare.txt ]; then
+            echo "(no answer yet - DNS propagation in progress)" | tee dig-cloudflare.txt
+          fi
+          cat dig-cloudflare.txt
+          echo ""
+          
+          echo "📡 Querying Quad9 DNS (9.9.9.9)..."
+          dig +nocmd +noall +answer -t "${TYPE}" "${FQDN}" @9.9.9.9 | tee dig-quad9.txt || echo "(no answer)" | tee dig-quad9.txt
+          if [ ! -s dig-quad9.txt ]; then
+            echo "(no answer yet - DNS propagation in progress)" | tee dig-quad9.txt
+          fi
+          cat dig-quad9.txt
+          echo ""
+          
+          # Full dig for debugging
+          echo "🔬 Full DNS Query Details:"
+          dig "${FQDN}" "${TYPE}" @8.8.8.8 | tee dig-full.txt
+          echo ""
+          
+          # Query Cloudflare API if token is available
+          if [ -n "${CF_API_TOKEN}" ]; then
+            echo "============================================"
+            echo "☁️  CLOUDFLARE DASHBOARD INFO"
+            echo "============================================"
+            echo ""
+            
+            # Auto-discover zone ID if not provided
+            if [ -z "${CF_ZONE_ID}" ]; then
+              echo "CF_ZONE_ID not set, looking up zone for ${{ inputs.zone_fqdn }}..."
+              ZONE_NAME="${FQDN#*.}"  # Remove first label to get zone
+              ZONE_NAME="${ZONE_NAME%.}"  # Remove trailing dot
+              echo "Looking for zone: ${ZONE_NAME}"
+              
+              ZONE_LOOKUP=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X GET "https://api.cloudflare.com/v4/zones?name=${ZONE_NAME}" \
+                -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                -H "Content-Type: application/json")
+              
+              # Extract HTTP status
+              HTTP_STATUS=$(echo "${ZONE_LOOKUP}" | grep "HTTP_STATUS:" | cut -d: -f2)
+              ZONE_BODY=$(echo "${ZONE_LOOKUP}" | sed '/HTTP_STATUS:/d')
+              
+              echo "HTTP Status: ${HTTP_STATUS}"
+              
+              if [ "${HTTP_STATUS}" != "200" ]; then
+                echo "⚠️  Cloudflare API Error (HTTP ${HTTP_STATUS})"
+                echo "Raw Response:"
+                echo "${ZONE_BODY}"
+                echo ""
+                echo "Possible issues:"
+                echo "  - CF_API_TOKEN is invalid or expired"
+                echo "  - Token doesn't have 'Zone:Read' permission"
+                echo "  - Account doesn't have access to this zone"
+              else
+                # Try to parse JSON
+                CF_ZONE_ID=$(echo "${ZONE_BODY}" | jq -r '.result[0].id // empty' 2>/dev/null)
+                
+                if [ -n "${CF_ZONE_ID}" ]; then
+                  echo "✅ Found Zone ID: ${CF_ZONE_ID}"
+                else
+                  echo "⚠️  Zone '${ZONE_NAME}' not found in Cloudflare account"
+                  ZONE_COUNT=$(echo "${ZONE_BODY}" | jq -r '.result | length' 2>/dev/null || echo "0")
+                  echo "Available zones: ${ZONE_COUNT}"
+                  if [ "${ZONE_COUNT}" -gt 0 ]; then
+                    echo "Zones in account:"
+                    echo "${ZONE_BODY}" | jq -r '.result[].name' 2>/dev/null
+                  fi
+                fi
+              fi
+              echo ""
+            fi
+            
+            if [ -n "${CF_ZONE_ID}" ]; then
+              # Clean record name for API query
+              RECORD_NAME="${FQDN%.}"
+              
+              echo "Querying Cloudflare API for: ${RECORD_NAME} (${TYPE})"
+              echo "Zone ID: ${CF_ZONE_ID}"
+              echo ""
+              
+              # Query Cloudflare API for record
+              CF_RESPONSE=$(curl -s -X GET "https://api.cloudflare.com/v4/zones/${CF_ZONE_ID}/dns_records?name=${RECORD_NAME}&type=${TYPE}" \
+                -H "Authorization: Bearer ${CF_API_TOKEN}" \
+                -H "Content-Type: application/json")
+              
+              echo "${CF_RESPONSE}" > cf-response.json
+              
+              # Check API response success
+              CF_SUCCESS=$(echo "${CF_RESPONSE}" | jq -r '.success' 2>/dev/null || echo "false")
+              if [ "${CF_SUCCESS}" != "true" ]; then
+                echo "⚠️  Cloudflare API Error:"
+                echo "${CF_RESPONSE}" | jq -r '.errors[]?.message' 2>/dev/null || echo "Unknown error"
+                echo ""
+              fi
+              
+              # Check if record exists in Cloudflare
+              RECORD_COUNT=$(echo "${CF_RESPONSE}" | jq -r '.result | length')
+              
+              if [ "${RECORD_COUNT}" -gt 0 ]; then
+                echo "✅ Record found in Cloudflare"
+                echo ""
+                
+                # Extract record details
+                CF_ID=$(echo "${CF_RESPONSE}" | jq -r '.result[0].id')
+                CF_NAME=$(echo "${CF_RESPONSE}" | jq -r '.result[0].name')
+                CF_TYPE=$(echo "${CF_RESPONSE}" | jq -r '.result[0].type')
+                CF_CONTENT=$(echo "${CF_RESPONSE}" | jq -r '.result[0].content')
+                CF_TTL=$(echo "${CF_RESPONSE}" | jq -r '.result[0].ttl')
+                CF_PROXIED=$(echo "${CF_RESPONSE}" | jq -r '.result[0].proxied')
+                CF_CREATED=$(echo "${CF_RESPONSE}" | jq -r '.result[0].created_on')
+                CF_MODIFIED=$(echo "${CF_RESPONSE}" | jq -r '.result[0].modified_on')
+                
+                echo "📋 Record Details:"
+                echo "   ID: ${CF_ID}"
+                echo "   Name: ${CF_NAME}"
+                echo "   Type: ${CF_TYPE}"
+                echo "   Content: ${CF_CONTENT}"
+                echo "   TTL: ${CF_TTL}"
+                if [ "${CF_PROXIED}" == "true" ]; then
+                  echo "   Proxy: 🟠 ENABLED (Orange Cloud)"
+                else
+                  echo "   Proxy: ⚪ DISABLED (DNS Only)"
+                fi
+                echo "   Created: ${CF_CREATED}"
+                echo "   Modified: ${CF_MODIFIED}"
+                echo ""
+                
+                # Dashboard link
+                echo "🔗 Cloudflare Dashboard:"
+                echo "   https://dash.cloudflare.com/${CF_ZONE_ID}/dns/records"
+              else
+                echo "⚠️  Record not yet synced to Cloudflare"
+                echo "   (UDDI sync may take a few moments)"
+              fi
+            fi
+          else
+            echo "ℹ️  Cloudflare API credentials not configured"
+            echo "   Set CF_API_TOKEN and CF_ZONE_ID secrets to enable dashboard info"
+          fi
+          echo ""
+          echo "============================================"
+
+      - name: Upload artifacts (proof)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: demo-proof
+          path: |
+            live/demos/dns/tfoutputs.json
+            live/demos/dns/dig-google.txt
+            live/demos/dns/dig-cloudflare.txt
+            live/demos/dns/dig-quad9.txt
+            live/demos/dns/dig-full.txt
+            live/demos/dns/cf-response.json
+            live/demos/dns/terraform.tfstate
+          if-no-files-found: ignore
+          retention-days: 7
+
+      - name: Job Summary
+        if: always()
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+        run: |
+          echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📊 Executive Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "This demonstration showcases **Infoblox Universal DDI** as a **single source of truth** for DNS management across multiple cloud providers. DNS records created in UDDI are automatically synchronized to downstream DNS services (demonstrated with Cloudflare)." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Status badges
+          if [ "${{ inputs.action }}" == "apply" ]; then
+            echo "![Status](https://img.shields.io/badge/Status-Deployed-success?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
+            echo "![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
+            echo "![Automation](https://img.shields.io/badge/Automation-Active-00C853?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
+            echo "![Target](https://img.shields.io/badge/Target-Cloudflare-f38020?style=for-the-badge&logo=cloudflare)" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "![Status](https://img.shields.io/badge/Status-Destroyed-critical?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Workflow diagram
+          echo "## 🔄 Automation Architecture" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`mermaid" >> $GITHUB_STEP_SUMMARY
+          echo "graph TB" >> $GITHUB_STEP_SUMMARY
+          echo "    A[Infrastructure as Code<br/>Terraform] -->|BloxOne Provider| B[Infoblox UDDI<br/>Single Source of Truth]" >> $GITHUB_STEP_SUMMARY
+          echo "    B -->|Native Integration| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+          echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+          echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+          echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+          echo "    C1 --> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+          echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
+          echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
+          echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
+          echo "    style B fill:#0066cc,color:#fff,stroke:#003d7a,stroke-width:3px" >> $GITHUB_STEP_SUMMARY
+          echo "    style A fill:#2088FF,color:#fff" >> $GITHUB_STEP_SUMMARY
+          echo "    style C1 fill:#f38020,color:#fff" >> $GITHUB_STEP_SUMMARY
+          echo "    style D fill:#00C853,color:#fff" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "> **Infoblox UDDI** acts as the central management plane, distributing DNS records to multiple cloud providers" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Configuration Section
+          echo "## ⚙️ Record Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.action }}" == "apply" ]; then
+            echo "| **Action** | 🚀 \`Deploy\` |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Action** | 🗑️ \`Destroy\` |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "| **Zone** | \`${{ inputs.zone_fqdn }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Record Name** | \`${{ inputs.record_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Type** | \`${{ inputs.record_type }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Value** | \`${{ inputs.record_value }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **TTL** | \`${{ inputs.ttl }}s\` |" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ inputs.orange_cloud }}" == "true" ]; then
+            echo "| **Cloudflare Proxy** | 🟠 **ENABLED** (Orange Cloud) |" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "| **Cloudflare Proxy** | ⚪ Disabled (DNS Only) |" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "| **Executed** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # DNS Verification Section
+          if [ "${{ inputs.action }}" == "apply" ]; then
+            echo "## 🌐 Global DNS Verification" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "*Verified across multiple authoritative DNS resolvers worldwide*" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            if [ -f "dig-google.txt" ]; then
+              echo "### Google DNS (8.8.8.8)" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              cat dig-google.txt >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if [ -f "dig-cloudflare.txt" ]; then
+              echo "### Cloudflare DNS (1.1.1.1)" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              cat dig-cloudflare.txt >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            if [ -f "dig-quad9.txt" ]; then
+              echo "### Quad9 DNS (9.9.9.9)" >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              cat dig-quad9.txt >> $GITHUB_STEP_SUMMARY
+              echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Cloudflare Dashboard Info
+            if [ -f "cf-response.json" ]; then
+              echo "## 🎯 Downstream DNS Service (Example: Cloudflare)" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              RECORD_COUNT=$(jq -r '.result | length' cf-response.json 2>/dev/null || echo "0")
+              
+              if [ "${RECORD_COUNT}" -gt 0 ]; then
+                CF_NAME=$(jq -r '.result[0].name' cf-response.json)
+                CF_TYPE=$(jq -r '.result[0].type' cf-response.json)
+                CF_CONTENT=$(jq -r '.result[0].content' cf-response.json)
+                CF_TTL=$(jq -r '.result[0].ttl' cf-response.json)
+                CF_PROXIED=$(jq -r '.result[0].proxied' cf-response.json)
+                CF_ID=$(jq -r '.result[0].id' cf-response.json)
+                
+                echo "> ✅ **Synchronization Complete** - Record successfully deployed to Cloudflare's global edge network" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                
+                echo "### Record Details" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+                echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+                echo "| **Cloudflare Record ID** | \`${CF_ID}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **FQDN** | \`${CF_NAME}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Record Type** | \`${CF_TYPE}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Target** | \`${CF_CONTENT}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **TTL** | \`${CF_TTL}s\` |" >> $GITHUB_STEP_SUMMARY
+                
+                if [ "${CF_PROXIED}" == "true" ]; then
+                  echo "| **Proxy Status** | 🟠 **PROXIED** (Traffic routed through Cloudflare) |" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "**⚡ Benefits Active:**" >> $GITHUB_STEP_SUMMARY
+                  echo "- DDoS Protection" >> $GITHUB_STEP_SUMMARY
+                  echo "- CDN Acceleration" >> $GITHUB_STEP_SUMMARY
+                  echo "- SSL/TLS Encryption" >> $GITHUB_STEP_SUMMARY
+                  echo "- WAF (Web Application Firewall)" >> $GITHUB_STEP_SUMMARY
+                else
+                  echo "| **Proxy Status** | ⚪ DNS Only (Direct connection) |" >> $GITHUB_STEP_SUMMARY
+                fi
+                
+                echo "" >> $GITHUB_STEP_SUMMARY
+                if [ -n "${CF_ZONE_ID}" ]; then
+                  echo "### 🔗 Management Links" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "[📡 View in Cloudflare Dashboard](https://dash.cloudflare.com/${CF_ZONE_ID}/dns/records)" >> $GITHUB_STEP_SUMMARY
+                fi
+              else
+                echo "> ⏳ Record synchronization in progress (typically completes within seconds)" >> $GITHUB_STEP_SUMMARY
+              fi
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+          fi
+          
+          # Terraform Outputs
+          if [ -f "tfoutputs.json" ]; then
+            echo "## Terraform Outputs" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "<details>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>View JSON</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+            cat tfoutputs.json >> $GITHUB_STEP_SUMMARY
+            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "</details>" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+          fi
+          
+          # Business Value Section
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 💼 Infoblox UDDI Value Proposition" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### ✅ Key Benefits" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **🔒 Unified Management** - Single pane of glass for all DNS across multi-cloud" >> $GITHUB_STEP_SUMMARY
+          echo "- **🤖 Zero-Touch Automation** - Eliminate manual DNS configuration in each cloud provider" >> $GITHUB_STEP_SUMMARY
+          echo "- **🌐 Multi-Cloud Native** - AWS, Azure, GCP, Cloudflare, and more from one platform" >> $GITHUB_STEP_SUMMARY
+          echo "- **🛡️ Consistency & Compliance** - Enforce policies across all DNS services" >> $GITHUB_STEP_SUMMARY
+          echo "- **⚡ Rapid Deployment** - Infrastructure as Code enables GitOps workflows" >> $GITHUB_STEP_SUMMARY
+          echo "- **📊 Complete Visibility** - Centralized audit trail and reporting" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          # Technical Notes
+          echo "### 📖 Technical Notes" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "<details>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Implementation Details</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Infrastructure as Code**: Terraform with BloxOne provider" >> $GITHUB_STEP_SUMMARY
+          echo "- **State Management**: GitHub Actions cache for ephemeral demos" >> $GITHUB_STEP_SUMMARY
+          echo "- **Auto-Cleanup**: Scheduled workflow runs daily at 00:00 GMT+2" >> $GITHUB_STEP_SUMMARY
+          echo "- **DNS Verification**: Multi-resolver validation (Google, Cloudflare, Quad9)" >> $GITHUB_STEP_SUMMARY
+          echo "- **API Integration**: Direct Cloudflare API for orange cloud configuration" >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/bloxone-ddi/)** | Terraform BloxOne Provider | GitHub Actions" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "*This demo shows one of many cloud providers supported by Infoblox UDDI*" >> $GITHUB_STEP_SUMMARY

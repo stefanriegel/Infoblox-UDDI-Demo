@@ -1,0 +1,633 @@
+name: "UDDI - VPC Deployment"
+
+on:
+  workflow_dispatch:
+    inputs:
+      network_name:
+        description: "VPC/VNet Base Name"
+        required: true
+        type: string
+        default: "demo-vpc"
+      subnet_size:
+        description: "Subnet Size"
+        required: true
+        type: choice
+        options:
+          - "16"
+          - "20"
+          - "24"
+          - "26"
+          - "28"
+        default: "24"
+      vpc_count:
+        description: "Number of VPCs/VNets per cloud"
+        required: true
+        type: choice
+        options:
+          - "1"
+          - "2"
+          - "3"
+        default: "1"
+      deploy_aws:
+        description: "Deploy to AWS"
+        required: true
+        type: boolean
+        default: false
+      aws_region:
+        description: "AWS Region"
+        required: false
+        type: choice
+        options:
+          - "eu-central-1"
+          - "us-east-1"
+          - "us-west-2"
+        default: "eu-central-1"
+      deploy_azure:
+        description: "Deploy to Azure"
+        required: true
+        type: boolean
+        default: false
+      azure_location:
+        description: "Azure Location"
+        required: false
+        type: choice
+        options:
+          - "westeurope"
+          - "eastus"
+          - "westus2"
+        default: "westeurope"
+      deploy_gcp:
+        description: "Deploy to GCP"
+        required: true
+        type: boolean
+        default: false
+      gcp_region:
+        description: "GCP Region"
+        required: false
+        type: choice
+        options:
+          - "europe-west1"
+          - "us-central1"
+          - "us-west1"
+        default: "europe-west1"
+      action:
+        description: "Action"
+        required: true
+        type: choice
+        options:
+          - "apply"
+          - "destroy"
+        default: "apply"
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  preflight:
+    name: "Preflight Checks"
+    runs-on: ubuntu-latest
+    outputs:
+      deploy_count: ${{ steps.check.outputs.deploy_count }}
+      clouds: ${{ steps.check.outputs.clouds }}
+      total_networks: ${{ steps.check.outputs.total_networks }}
+    steps:
+      - name: Validate cloud selection
+        id: check
+        run: |
+          DEPLOY_COUNT=0
+          CLOUDS=""
+          TOTAL_NETWORKS=0
+          
+          if [ "${{ inputs.deploy_aws }}" == "true" ]; then
+            DEPLOY_COUNT=$((DEPLOY_COUNT + 1))
+            CLOUDS="${CLOUDS}AWS(${{ inputs.vpc_count }}) "
+            TOTAL_NETWORKS=$((TOTAL_NETWORKS + ${{ inputs.vpc_count }}))
+          fi
+          
+          if [ "${{ inputs.deploy_azure }}" == "true" ]; then
+            DEPLOY_COUNT=$((DEPLOY_COUNT + 1))
+            CLOUDS="${CLOUDS}Azure(${{ inputs.vpc_count }}) "
+            TOTAL_NETWORKS=$((TOTAL_NETWORKS + ${{ inputs.vpc_count }}))
+          fi
+          
+          if [ "${{ inputs.deploy_gcp }}" == "true" ]; then
+            DEPLOY_COUNT=$((DEPLOY_COUNT + 1))
+            CLOUDS="${CLOUDS}GCP(${{ inputs.vpc_count }}) "
+            TOTAL_NETWORKS=$((TOTAL_NETWORKS + ${{ inputs.vpc_count }}))
+          fi
+          
+          if [ $DEPLOY_COUNT -eq 0 ]; then
+            echo "❌ ERROR: No cloud provider selected!"
+            exit 1
+          fi
+          
+          echo "deploy_count=${DEPLOY_COUNT}" >> $GITHUB_OUTPUT
+          echo "clouds=${CLOUDS}" >> $GITHUB_OUTPUT
+          echo "total_networks=${TOTAL_NETWORKS}" >> $GITHUB_OUTPUT
+          
+          echo "✅ Deploying ${TOTAL_NETWORKS} total networks across ${DEPLOY_COUNT} cloud(s): ${CLOUDS}"
+
+  aws_vpcs:
+    name: "AWS VPCs"
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: ${{ inputs.deploy_aws == true }}
+    environment: dev
+    env:
+      BLOXONE_HOST: ${{ vars.BLOXONE_HOST }}
+      BLOXONE_API_KEY: ${{ secrets.BLOXONE_API_KEY }}
+      AWS_REGION: ${{ inputs.aws_region }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_BLOCK_ID: ${{ secrets.AWS_BLOCK_ID }}
+      IPAM_SPACE_ID: ${{ secrets.IPAM_SPACE_ID }}
+    outputs:
+      vpcs: ${{ steps.results.outputs.vpcs }}
+      verification: ${{ steps.verify.outputs.verification }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/vpc-aws/.terraform
+            live/demos/vpc-aws/.terraform.lock.hcl
+            live/demos/vpc-aws/terraform-*.tfstate
+            live/demos/vpc-aws/terraform-*.tfstate.backup
+          key: tfstate-vpc-aws-${{ inputs.network_name }}
+          restore-keys: |
+            tfstate-vpc-aws-
+
+      - name: Deploy AWS VPCs
+        id: deploy
+        working-directory: live/demos/vpc-aws
+        run: |
+          VPC_COUNT=${{ inputs.vpc_count }}
+          echo "🚀 Deploying ${VPC_COUNT} AWS VPC(s)..."
+          echo ""
+          
+          for i in $(seq 1 ${VPC_COUNT}); do
+            VPC_NAME="${{ inputs.network_name }}-aws-${i}"
+            echo "=========================================="
+            echo "VPC ${i}/${VPC_COUNT}: ${VPC_NAME}"
+            echo "=========================================="
+            
+            terraform init -input=false -no-color -reconfigure
+            
+            if [ "${{ inputs.action }}" == "apply" ]; then
+              terraform plan -input=false -no-color \
+                -var="bloxone_host=${BLOXONE_HOST}" \
+                -var="bloxone_api_key=${BLOXONE_API_KEY}" \
+                -var="vpc_name=${VPC_NAME}" \
+                -var="subnet_size=${{ inputs.subnet_size }}" \
+                -var="aws_region=${{ inputs.aws_region }}" \
+                -var="aws_block_id=${AWS_BLOCK_ID}" \
+                -var="ipam_space_id=${IPAM_SPACE_ID}" \
+                -state="terraform-${i}.tfstate" \
+                -out="tfplan-${i}"
+              
+              terraform apply -input=false -auto-approve -no-color \
+                -state="terraform-${i}.tfstate" \
+                "tfplan-${i}"
+              
+              VPC_ID=$(terraform output -state="terraform-${i}.tfstate" -raw vpc_id)
+              VPC_CIDR=$(terraform output -state="terraform-${i}.tfstate" -raw vpc_cidr)
+              
+              echo "${VPC_NAME}|${VPC_ID}|${VPC_CIDR}" >> /tmp/aws_vpcs.txt
+              echo "✅ VPC ${i}: ${VPC_ID} (${VPC_CIDR})"
+            elif [ "${{ inputs.action }}" == "destroy" ]; then
+              echo "⚠️ Destroy disabled in workflow - use Auto Cleanup action instead"
+              echo "Resources will be cleaned up automatically at midnight or via manual cleanup trigger"
+            fi
+            
+            echo ""
+          done
+
+      - name: Save Terraform state cache
+        if: ${{ inputs.action == 'apply' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            live/demos/vpc-aws/.terraform
+            live/demos/vpc-aws/.terraform.lock.hcl
+            live/demos/vpc-aws/terraform-*.tfstate
+            live/demos/vpc-aws/terraform-*.tfstate.backup
+          key: tfstate-vpc-aws-${{ inputs.network_name }}
+
+      - name: Capture Results
+        if: ${{ inputs.action == 'apply' }}
+        id: results
+        run: |
+          if [ -f /tmp/aws_vpcs.txt ]; then
+            VPCS=$(cat /tmp/aws_vpcs.txt | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "vpcs=${VPCS}" >> $GITHUB_OUTPUT
+          else
+            echo "vpcs=[]" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Verify AWS VPCs
+        if: ${{ inputs.action == 'apply' }}
+        id: verify
+        run: |
+          if [ ! -f /tmp/aws_vpcs.txt ]; then
+            echo "verification={}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo '{"vpcs": [' > /tmp/aws_verification.json
+          FIRST=true
+          
+          while IFS='|' read -r NAME VPC_ID CIDR; do
+            [ -z "$NAME" ] && continue
+            
+            VPC_STATE=$(aws ec2 describe-vpcs \
+              --region ${{ inputs.aws_region }} \
+              --vpc-ids ${VPC_ID} \
+              --query 'Vpcs[0].State' \
+              --output text 2>/dev/null || echo "error")
+            
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              echo ',' >> /tmp/aws_verification.json
+            fi
+            
+            echo "{\"name\": \"${NAME}\", \"id\": \"${VPC_ID}\", \"cidr\": \"${CIDR}\", \"state\": \"${VPC_STATE}\"}" >> /tmp/aws_verification.json
+          done < /tmp/aws_vpcs.txt
+          
+          echo ']}' >> /tmp/aws_verification.json
+          VERIFICATION=$(cat /tmp/aws_verification.json | jq -c .)
+          echo "verification=${VERIFICATION}" >> $GITHUB_OUTPUT
+
+  azure_vnets:
+    name: "Azure VNets"
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: ${{ inputs.deploy_azure == true }}
+    environment: dev
+    env:
+      BLOXONE_HOST: ${{ vars.BLOXONE_HOST }}
+      BLOXONE_API_KEY: ${{ secrets.BLOXONE_API_KEY }}
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      AZURE_BLOCK_ID: ${{ secrets.AZURE_BLOCK_ID }}
+      IPAM_SPACE_ID: ${{ secrets.IPAM_SPACE_ID }}
+    outputs:
+      vnets: ${{ steps.results.outputs.vnets }}
+      verification: ${{ steps.verify.outputs.verification }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/vpc-azure/.terraform
+            live/demos/vpc-azure/.terraform.lock.hcl
+            live/demos/vpc-azure/terraform-*.tfstate
+            live/demos/vpc-azure/terraform-*.tfstate.backup
+          key: tfstate-vpc-azure-${{ inputs.network_name }}
+          restore-keys: |
+            tfstate-vpc-azure-
+
+      - name: Deploy Azure VNets
+        id: deploy
+        working-directory: live/demos/vpc-azure
+        run: |
+          VNET_COUNT=${{ inputs.vpc_count }}
+          echo "🚀 Deploying ${VNET_COUNT} Azure VNet(s)..."
+          echo ""
+          
+          for i in $(seq 1 ${VNET_COUNT}); do
+            VNET_NAME="${{ inputs.network_name }}-azure-${i}"
+            echo "=========================================="
+            echo "VNet ${i}/${VNET_COUNT}: ${VNET_NAME}"
+            echo "=========================================="
+            
+            terraform init -input=false -no-color -reconfigure
+            
+            if [ "${{ inputs.action }}" == "apply" ]; then
+              terraform plan -input=false -no-color \
+                -var="bloxone_host=${BLOXONE_HOST}" \
+                -var="bloxone_api_key=${BLOXONE_API_KEY}" \
+                -var="vnet_name=${VNET_NAME}" \
+                -var="subnet_size=${{ inputs.subnet_size }}" \
+                -var="azure_location=${{ inputs.azure_location }}" \
+                -var="azure_block_id=${AZURE_BLOCK_ID}" \
+                -var="ipam_space_id=${IPAM_SPACE_ID}" \
+                -state="terraform-${i}.tfstate" \
+                -out="tfplan-${i}"
+              
+              terraform apply -input=false -auto-approve -no-color \
+                -state="terraform-${i}.tfstate" \
+                "tfplan-${i}"
+              
+              VNET_ID=$(terraform output -state="terraform-${i}.tfstate" -raw vnet_id)
+              VNET_CIDR=$(terraform output -state="terraform-${i}.tfstate" -raw vnet_cidr)
+              
+              echo "${VNET_NAME}|${VNET_ID}|${VNET_CIDR}" >> /tmp/azure_vnets.txt
+              echo "✅ VNet ${i}: ${VNET_ID} (${VNET_CIDR})"
+            elif [ "${{ inputs.action }}" == "destroy" ]; then
+              echo "⚠️ Destroy disabled in workflow - use Auto Cleanup action instead"
+              echo "Resources will be cleaned up automatically at midnight or via manual cleanup trigger"
+            fi
+            
+            echo ""
+          done
+
+      - name: Save Terraform state cache
+        if: ${{ inputs.action == 'apply' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            live/demos/vpc-azure/.terraform
+            live/demos/vpc-azure/.terraform.lock.hcl
+            live/demos/vpc-azure/terraform-*.tfstate
+            live/demos/vpc-azure/terraform-*.tfstate.backup
+          key: tfstate-vpc-azure-${{ inputs.network_name }}
+
+      - name: Capture Results
+        if: ${{ inputs.action == 'apply' }}
+        id: results
+        run: |
+          if [ -f /tmp/azure_vnets.txt ]; then
+            VNETS=$(cat /tmp/azure_vnets.txt | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "vnets=${VNETS}" >> $GITHUB_OUTPUT
+          else
+            echo "vnets=[]" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Verify Azure VNets
+        if: ${{ inputs.action == 'apply' }}
+        id: verify
+        run: |
+          if [ ! -f /tmp/azure_vnets.txt ]; then
+            echo "verification={}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          az login --service-principal \
+            --username ${ARM_CLIENT_ID} \
+            --password ${ARM_CLIENT_SECRET} \
+            --tenant ${ARM_TENANT_ID} --output none 2>/dev/null || true
+          
+          az account set --subscription ${ARM_SUBSCRIPTION_ID} 2>/dev/null || true
+          
+          echo '{"vnets": [' > /tmp/azure_verification.json
+          FIRST=true
+          
+          while IFS='|' read -r NAME VNET_ID CIDR; do
+            [ -z "$NAME" ] && continue
+            
+            RG_NAME="${NAME}-rg"
+            VNET_STATE=$(az network vnet show \
+              --resource-group ${RG_NAME} \
+              --name ${NAME} \
+              --query 'provisioningState' \
+              --output tsv 2>/dev/null || echo "error")
+            
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              echo ',' >> /tmp/azure_verification.json
+            fi
+            
+            echo "{\"name\": \"${NAME}\", \"id\": \"${VNET_ID}\", \"cidr\": \"${CIDR}\", \"state\": \"${VNET_STATE}\"}" >> /tmp/azure_verification.json
+          done < /tmp/azure_vnets.txt
+          
+          echo ']}' >> /tmp/azure_verification.json
+          VERIFICATION=$(cat /tmp/azure_verification.json | jq -c .)
+          echo "verification=${VERIFICATION}" >> $GITHUB_OUTPUT
+
+  gcp_vpcs:
+    name: "GCP VPCs"
+    runs-on: ubuntu-latest
+    needs: preflight
+    if: ${{ inputs.deploy_gcp == true }}
+    environment: dev
+    env:
+      BLOXONE_HOST: ${{ vars.BLOXONE_HOST }}
+      BLOXONE_API_KEY: ${{ secrets.BLOXONE_API_KEY }}
+      GOOGLE_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+      GOOGLE_PROJECT: ${{ secrets.GCP_PROJECT_ID }}
+      GCP_BLOCK_ID: ${{ secrets.GCP_BLOCK_ID }}
+      IPAM_SPACE_ID: ${{ secrets.IPAM_SPACE_ID }}
+    outputs:
+      vpcs: ${{ steps.results.outputs.vpcs }}
+      verification: ${{ steps.verify.outputs.verification }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/vpc-gcp/.terraform
+            live/demos/vpc-gcp/.terraform.lock.hcl
+            live/demos/vpc-gcp/terraform-*.tfstate
+            live/demos/vpc-gcp/terraform-*.tfstate.backup
+          key: tfstate-vpc-gcp-${{ inputs.network_name }}
+          restore-keys: |
+            tfstate-vpc-gcp-
+
+      - name: Deploy GCP VPCs
+        id: deploy
+        working-directory: live/demos/vpc-gcp
+        run: |
+          VPC_COUNT=${{ inputs.vpc_count }}
+          echo "🚀 Deploying ${VPC_COUNT} GCP VPC(s)..."
+          echo ""
+          
+          for i in $(seq 1 ${VPC_COUNT}); do
+            VPC_NAME="${{ inputs.network_name }}-gcp-${i}"
+            echo "=========================================="
+            echo "VPC ${i}/${VPC_COUNT}: ${VPC_NAME}"
+            echo "=========================================="
+            
+            terraform init -input=false -no-color -reconfigure
+            
+            if [ "${{ inputs.action }}" == "apply" ]; then
+              terraform plan -input=false -no-color \
+                -var="bloxone_host=${BLOXONE_HOST}" \
+                -var="bloxone_api_key=${BLOXONE_API_KEY}" \
+                -var="vpc_name=${VPC_NAME}" \
+                -var="subnet_size=${{ inputs.subnet_size }}" \
+                -var="gcp_region=${{ inputs.gcp_region }}" \
+                -var="gcp_project_id=${GOOGLE_PROJECT}" \
+                -var="gcp_block_id=${GCP_BLOCK_ID}" \
+                -var="ipam_space_id=${IPAM_SPACE_ID}" \
+                -state="terraform-${i}.tfstate" \
+                -out="tfplan-${i}"
+              
+              terraform apply -input=false -auto-approve -no-color \
+                -state="terraform-${i}.tfstate" \
+                "tfplan-${i}"
+              
+              VPC_ID=$(terraform output -state="terraform-${i}.tfstate" -raw vpc_id)
+              VPC_CIDR=$(terraform output -state="terraform-${i}.tfstate" -raw vpc_cidr)
+              
+              echo "${VPC_NAME}|${VPC_ID}|${VPC_CIDR}" >> /tmp/gcp_vpcs.txt
+              echo "✅ VPC ${i}: ${VPC_ID} (${VPC_CIDR})"
+            elif [ "${{ inputs.action }}" == "destroy" ]; then
+              echo "⚠️ Destroy disabled in workflow - use Auto Cleanup action instead"
+              echo "Resources will be cleaned up automatically at midnight or via manual cleanup trigger"
+            fi
+            
+            echo ""
+          done
+
+      - name: Save Terraform state cache
+        if: ${{ inputs.action == 'apply' }}
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            live/demos/vpc-gcp/.terraform
+            live/demos/vpc-gcp/.terraform.lock.hcl
+            live/demos/vpc-gcp/terraform-*.tfstate
+            live/demos/vpc-gcp/terraform-*.tfstate.backup
+          key: tfstate-vpc-gcp-${{ inputs.network_name }}
+
+      - name: Capture Results
+        if: ${{ inputs.action == 'apply' }}
+        id: results
+        run: |
+          if [ -f /tmp/gcp_vpcs.txt ]; then
+            VPCS=$(cat /tmp/gcp_vpcs.txt | jq -R -s -c 'split("\n") | map(select(length > 0))')
+            echo "vpcs=${VPCS}" >> $GITHUB_OUTPUT
+          else
+            echo "vpcs=[]" >> $GITHUB_OUTPUT
+          fi
+      
+      - name: Verify GCP VPCs
+        if: ${{ inputs.action == 'apply' }}
+        id: verify
+        run: |
+          if [ ! -f /tmp/gcp_vpcs.txt ]; then
+            echo "verification={}" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "${GOOGLE_CREDENTIALS}" | gcloud auth activate-service-account --key-file=- 2>/dev/null || true
+          gcloud config set project ${GOOGLE_PROJECT} 2>/dev/null || true
+          
+          echo '{"vpcs": [' > /tmp/gcp_verification.json
+          FIRST=true
+          
+          while IFS='|' read -r NAME VPC_ID CIDR; do
+            [ -z "$NAME" ] && continue
+            
+            VPC_STATE=$(gcloud compute networks describe ${NAME} \
+              --format="value(state)" 2>/dev/null || echo "error")
+            
+            if [ "$FIRST" = true ]; then
+              FIRST=false
+            else
+              echo ',' >> /tmp/gcp_verification.json
+            fi
+            
+            echo "{\"name\": \"${NAME}\", \"id\": \"${VPC_ID}\", \"cidr\": \"${CIDR}\", \"state\": \"${VPC_STATE}\"}" >> /tmp/gcp_verification.json
+          done < /tmp/gcp_vpcs.txt
+          
+          echo ']}' >> /tmp/gcp_verification.json
+          VERIFICATION=$(cat /tmp/gcp_verification.json | jq -c .)
+          echo "verification=${VERIFICATION}" >> $GITHUB_OUTPUT
+
+  summary:
+    name: "Demo Summary"
+    runs-on: ubuntu-latest
+    needs: [preflight, aws_vpcs, azure_vnets, gcp_vpcs]
+    if: always()
+    env:
+      AWS_VERIFICATION: ${{ needs.aws_vpcs.outputs.verification || '{}' }}
+      AZURE_VERIFICATION: ${{ needs.azure_vnets.outputs.verification || '{}' }}
+      GCP_VERIFICATION: ${{ needs.gcp_vpcs.outputs.verification || '{}' }}
+    steps:
+      - name: Generate Summary
+        run: |
+          echo "# Multi-Cloud VPC/VNet Provisioning" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Powered by Infoblox Universal DDI**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          echo "## Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Action** | \`${{ inputs.action }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Network Name** | \`${{ inputs.network_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Subnet Size** | \`/${{ inputs.subnet_size }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Total Networks** | ${{ needs.preflight.outputs.total_networks }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          
+          if [ "${{ inputs.action }}" == "apply" ]; then
+            echo "## Deployed Resources" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # AWS VPCs
+            if [ "${{ inputs.deploy_aws }}" == "true" ] && [ "${{ needs.aws_vpcs.result }}" == "success" ]; then
+              echo "### AWS VPCs (${{ inputs.aws_region }})" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "| Name | VPC ID | CIDR (UDDI Allocated) | Status |" >> $GITHUB_STEP_SUMMARY
+              echo "|------|--------|----------------------|--------|" >> $GITHUB_STEP_SUMMARY
+              
+              echo '${AWS_VERIFICATION}' | jq -r '.vpcs[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Azure VNets
+            if [ "${{ inputs.deploy_azure }}" == "true" ] && [ "${{ needs.azure_vnets.result }}" == "success" ]; then
+              echo "### Azure VNets (${{ inputs.azure_location }})" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "| Name | VNet ID | CIDR (UDDI Allocated) | Status |" >> $GITHUB_STEP_SUMMARY
+              echo "|------|---------|----------------------|--------|" >> $GITHUB_STEP_SUMMARY
+              
+              echo '${AZURE_VERIFICATION}' | jq -r '.vnets[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # GCP VPCs
+            if [ "${{ inputs.deploy_gcp }}" == "true" ] && [ "${{ needs.gcp_vpcs.result }}" == "success" ]; then
+              echo "### GCP VPCs (${{ inputs.gcp_region }})" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              echo "| Name | VPC ID | CIDR (UDDI Allocated) | Status |" >> $GITHUB_STEP_SUMMARY
+              echo "|------|--------|----------------------|--------|" >> $GITHUB_STEP_SUMMARY
+              
+              echo '${GCP_VERIFICATION}' | jq -r '.vpcs[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            echo "---" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "**UDDI as Single Source of Truth:** All subnets allocated from centralized IPAM blocks" >> $GITHUB_STEP_SUMMARY
+          elif [ "${{ inputs.action }}" == "destroy" ]; then
+            echo "## Resources Destroyed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "> Use Auto Cleanup workflow for resource deletion" >> $GITHUB_STEP_SUMMARY
+          fi
