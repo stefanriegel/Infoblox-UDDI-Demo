@@ -1,7 +1,7 @@
 # AGENTS.md - Infoblox UDDI Demo Project
 
 ## Purpose
-This repository drives UDDI Automation demos through GitHub Actions workflows, demonstrating Infoblox Universal DDI capabilities for multi-cloud DNS and IPAM management.
+This repository drives UDDI Automation demos through GitHub Actions workflows, demonstrating Infoblox Universal DDI capabilities for multi-cloud DNS and IPAM management. The DNS demo now supports multiple cloud providers with provider-specific zones and API integrations.
 
 ## Build/Lint/Test Commands
 
