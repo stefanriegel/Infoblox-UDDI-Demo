@@ -3,6 +3,12 @@ name: "UDDI - Multi-Cloud DNS"
 on:
   workflow_dispatch:
     inputs:
+      dns_provider:
+        description: "DNS provider for record verification and management"
+        required: true
+        type: choice
+        options: [Cloudflare, "Azure DNS", Route53, "Cloud DNS"]
+        default: Cloudflare
       zone_fqdn:
         description: "Authoritative zone FQDN (must end with a dot)"
         default: "virtualife.pro."
@@ -46,7 +52,7 @@ env:
 
 jobs:
   demo:
-    name: "Deploy DNS via Infoblox UDDI → ${{ inputs.record_type }} Record"
+    name: "Deploy DNS via Infoblox UDDI → ${{ inputs.dns_provider }} ${{ inputs.record_type }} Record"
     runs-on: ubuntu-latest
     environment: dev
     defaults:
@@ -102,7 +108,7 @@ jobs:
           terraform output -json > tfoutputs.json
 
       - name: Configure Cloudflare Orange Cloud
-        if: ${{ inputs.action == 'apply' && inputs.orange_cloud == true && (inputs.record_type == 'A' || inputs.record_type == 'AAAA' || inputs.record_type == 'CNAME') }}
+        if: ${{ inputs.action == 'apply' && inputs.dns_provider == 'Cloudflare' && inputs.orange_cloud == true && (inputs.record_type == 'A' || inputs.record_type == 'AAAA' || inputs.record_type == 'CNAME') }}
         run: |
           set -e
           echo "Enabling Cloudflare Orange Cloud for record..."
@@ -159,16 +165,20 @@ jobs:
             -var="ttl=${{ inputs.ttl }}" \
             -var="orange_cloud=${{ inputs.orange_cloud }}"
 
-      - name: DNS Verification & Cloudflare Status
+      - name: DNS Verification & Provider Status
         if: ${{ inputs.action == 'apply' }}
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          AZURE_CLIENT_ID: ${{ secrets.AZURE_CLIENT_ID }}
+          AZURE_CLIENT_SECRET: ${{ secrets.AZURE_CLIENT_SECRET }}
+          AZURE_TENANT_ID: ${{ secrets.AZURE_TENANT_ID }}
+          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
         run: |
           set -e
           
-          # Wait for UDDI to Cloudflare sync
-          echo "⏳ Waiting 10 seconds for UDDI → Cloudflare sync..."
+           # Wait for UDDI to provider sync
+           echo "⏳ Waiting 10 seconds for UDDI → ${{ inputs.dns_provider }} sync..."
           sleep 10
           echo ""
           
@@ -219,8 +229,8 @@ jobs:
           dig "${FQDN}" "${TYPE}" @8.8.8.8 | tee dig-full.txt
           echo ""
           
-          # Query Cloudflare API if token is available
-          if [ -n "${CF_API_TOKEN}" ]; then
+           # Query provider API if credentials are available
+           if [ "${{ inputs.dns_provider }}" == "Cloudflare" ] && [ -n "${CF_API_TOKEN}" ]; then
             echo "============================================"
             echo "☁️  CLOUDFLARE DASHBOARD INFO"
             echo "============================================"
@@ -334,10 +344,129 @@ jobs:
                 echo "   (UDDI sync may take a few moments)"
               fi
             fi
-          else
-            echo "ℹ️  Cloudflare API credentials not configured"
-            echo "   Set CF_API_TOKEN and CF_ZONE_ID secrets to enable dashboard info"
-          fi
+           else
+             echo "ℹ️  Cloudflare API credentials not configured"
+             echo "   Set CF_API_TOKEN and CF_ZONE_ID secrets to enable dashboard info"
+           elif [ "${{ inputs.dns_provider }}" == "Azure DNS" ]; then
+             echo "============================================"
+             echo "☁️  AZURE DNS DASHBOARD INFO"
+             echo "============================================"
+             echo ""
+
+             # Check if Azure credentials are configured
+             if [ -n "${AZURE_CLIENT_ID}" ] && [ -n "${AZURE_CLIENT_SECRET}" ] && [ -n "${AZURE_TENANT_ID}" ] && [ -n "${AZURE_SUBSCRIPTION_ID}" ]; then
+               echo "Authenticating with Azure..."
+
+               # Get Azure access token
+               AZURE_TOKEN=$(curl -s -X POST "https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/token" \
+                 -H "Content-Type: application/x-www-form-urlencoded" \
+                 -d "grant_type=client_credentials&client_id=${AZURE_CLIENT_ID}&client_secret=${AZURE_CLIENT_SECRET}&scope=https://management.azure.com/.default" | jq -r '.access_token')
+
+               if [ -z "${AZURE_TOKEN}" ] || [ "${AZURE_TOKEN}" == "null" ]; then
+                 echo "❌ Failed to authenticate with Azure"
+                 echo "   Check AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, and AZURE_TENANT_ID"
+               else
+                 echo "✅ Successfully authenticated with Azure"
+
+                 # Extract zone name from FQDN (remove first label and trailing dot)
+                 ZONE_NAME="${FQDN#*.}"
+                 ZONE_NAME="${ZONE_NAME%.}"
+
+                 # Extract record name (everything before zone)
+                 RECORD_NAME="${FQDN%.${ZONE_NAME}}"
+                 if [ "${RECORD_NAME}" == "${ZONE_NAME}" ]; then
+                   RECORD_NAME="@"
+                 fi
+
+                 echo "Looking for DNS zone: ${ZONE_NAME}"
+                 echo "Looking for record: ${RECORD_NAME} (${TYPE})"
+                 echo ""
+
+                 # List DNS zones in subscription to find our zone
+                 ZONES_URL="https://management.azure.com/subscriptions/${AZURE_SUBSCRIPTION_ID}/providers/Microsoft.Network/dnszones?api-version=2018-05-01"
+                 ZONES_RESPONSE=$(curl -s -H "Authorization: Bearer ${AZURE_TOKEN}" -H "Content-Type: application/json" "${ZONES_URL}")
+
+                 # Find our zone
+                 ZONE_RESOURCE_ID=$(echo "${ZONES_RESPONSE}" | jq -r --arg zone "$ZONE_NAME" '.value[] | select(.name == $zone) | .id')
+
+                 if [ -z "${ZONE_RESOURCE_ID}" ]; then
+                   echo "❌ DNS Zone '${ZONE_NAME}' not found in Azure subscription"
+                   echo "Available zones:"
+                   echo "${ZONES_RESPONSE}" | jq -r '.value[].name' 2>/dev/null || echo "   (Could not parse response)"
+                 else
+                   echo "✅ Found DNS Zone: ${ZONE_NAME}"
+                   echo "Zone Resource ID: ${ZONE_RESOURCE_ID}"
+
+                   # Query for the specific record
+                   RECORD_URL="${ZONE_RESOURCE_ID}/${TYPE}/${RECORD_NAME}?api-version=2018-05-01"
+                   RECORD_RESPONSE=$(curl -s -H "Authorization: Bearer ${AZURE_TOKEN}" -H "Content-Type: application/json" "${RECORD_URL}")
+
+                   # Check if record exists
+                   RECORD_NAME_CHECK=$(echo "${RECORD_RESPONSE}" | jq -r '.name' 2>/dev/null)
+                   if [ "${RECORD_NAME_CHECK}" == "${RECORD_NAME}" ] || ([ "${RECORD_NAME}" == "@" ] && [ "${RECORD_NAME_CHECK}" == "${ZONE_NAME}" ]); then
+                     echo ""
+                     echo "✅ Record found in Azure DNS"
+                     echo ""
+
+                     # Extract record details
+                     RECORD_TYPE=$(echo "${RECORD_RESPONSE}" | jq -r '.type' | sed 's/.*\///')
+                     RECORD_TTL=$(echo "${RECORD_RESPONSE}" | jq -r '.properties.TTL')
+
+                     echo "📋 Record Details:"
+                     echo "   Name: ${RECORD_NAME_CHECK}"
+                     echo "   Type: ${RECORD_TYPE}"
+                     echo "   TTL: ${RECORD_TTL}s"
+
+                     # Extract record data based on type
+                     case "${TYPE}" in
+                       "A")
+                         RECORD_VALUE=$(echo "${RECORD_RESPONSE}" | jq -r '.properties.ARecords[0].ipv4Address')
+                         echo "   IPv4 Address: ${RECORD_VALUE}"
+                         ;;
+                       "AAAA")
+                         RECORD_VALUE=$(echo "${RECORD_RESPONSE}" | jq -r '.properties.AaaaRecords[0].ipv6Address')
+                         echo "   IPv6 Address: ${RECORD_VALUE}"
+                         ;;
+                       "TXT")
+                         RECORD_VALUE=$(echo "${RECORD_RESPONSE}" | jq -r '.properties.TxtRecords[0].value[0]')
+                         echo "   Text: ${RECORD_VALUE}"
+                         ;;
+                       "CNAME")
+                         RECORD_VALUE=$(echo "${RECORD_RESPONSE}" | jq -r '.properties.CnameRecord.cname')
+                         echo "   Target: ${RECORD_VALUE}"
+                         ;;
+                     esac
+
+                     echo ""
+                     echo "🔗 Azure Portal:"
+                     echo "   https://portal.azure.com/#resource${ZONE_RESOURCE_ID}"
+                   else
+                     echo "❌ Record not yet synced to Azure DNS"
+                     echo "   (UDDI sync may take a few moments)"
+                     echo ""
+                     echo "Response: ${RECORD_RESPONSE}"
+                   fi
+                 fi
+               fi
+             else
+               echo "ℹ️  Azure DNS API credentials not configured"
+               echo "   Set AZURE_CLIENT_ID, AZURE_CLIENT_SECRET, AZURE_TENANT_ID, and AZURE_SUBSCRIPTION_ID secrets to enable dashboard info"
+             fi
+           elif [ "${{ inputs.dns_provider }}" == "Route53" ]; then
+             echo "============================================"
+             echo "☁️  AWS ROUTE53 DASHBOARD INFO"
+             echo "============================================"
+             echo ""
+             echo "🔄 Route53 integration coming soon..."
+             echo "   (Currently in development)"
+           elif [ "${{ inputs.dns_provider }}" == "Cloud DNS" ]; then
+             echo "============================================"
+             echo "☁️  GCP CLOUD DNS DASHBOARD INFO"
+             echo "============================================"
+             echo ""
+             echo "🔄 Cloud DNS integration coming soon..."
+             echo "   (Currently in development)"
+           fi
           echo ""
           echo "============================================"
 
@@ -374,7 +503,20 @@ jobs:
             echo "![Status](https://img.shields.io/badge/Status-Deployed-success?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
             echo "![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
             echo "![Automation](https://img.shields.io/badge/Automation-Active-00C853?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
-            echo "![Target](https://img.shields.io/badge/Target-Cloudflare-f38020?style=for-the-badge&logo=cloudflare)" >> $GITHUB_STEP_SUMMARY
+            case "${{ inputs.dns_provider }}" in
+              "Cloudflare")
+                echo "![Target](https://img.shields.io/badge/Target-Cloudflare-f38020?style=for-the-badge&logo=cloudflare)" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "Azure DNS")
+                echo "![Target](https://img.shields.io/badge/Target-Azure_DNS-0078D4?style=for-the-badge&logo=microsoft-azure)" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "Route53")
+                echo "![Target](https://img.shields.io/badge/Target-Route53-FF9900?style=for-the-badge&logo=amazon-aws)" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "Cloud DNS")
+                echo "![Target](https://img.shields.io/badge/Target-Cloud_DNS-4285F4?style=for-the-badge&logo=google-cloud)" >> $GITHUB_STEP_SUMMARY
+                ;;
+            esac
           else
             echo "![Status](https://img.shields.io/badge/Status-Destroyed-critical?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
           fi
@@ -386,18 +528,55 @@ jobs:
           echo "\`\`\`mermaid" >> $GITHUB_STEP_SUMMARY
           echo "graph TB" >> $GITHUB_STEP_SUMMARY
           echo "    A[Infrastructure as Code<br/>Terraform] -->|BloxOne Provider| B[Infoblox UDDI<br/>Single Source of Truth]" >> $GITHUB_STEP_SUMMARY
-          echo "    B -->|Native Integration| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
-          echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
-          echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
-          echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
-          echo "    C1 --> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
-          echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
-          echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
-          echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
-          echo "    style B fill:#0066cc,color:#fff,stroke:#003d7a,stroke-width:3px" >> $GITHUB_STEP_SUMMARY
-          echo "    style A fill:#2088FF,color:#fff" >> $GITHUB_STEP_SUMMARY
-          echo "    style C1 fill:#f38020,color:#fff" >> $GITHUB_STEP_SUMMARY
-          echo "    style D fill:#00C853,color:#fff" >> $GITHUB_STEP_SUMMARY
+           case "${{ inputs.dns_provider }}" in
+             "Cloudflare")
+               echo "    B -->|Native Integration| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+               echo "    C1 --> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+               echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    style C1 fill:#f38020,color:#fff,stroke:#d1700f,stroke-width:3px" >> $GITHUB_STEP_SUMMARY
+               ;;
+             "Azure DNS")
+               echo "    B -.->|Also supports| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -->|Native Integration| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+               echo "    C1 -.-> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+               echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    C3 --> D" >> $GITHUB_STEP_SUMMARY
+               echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    style C3 fill:#0078D4,color:#fff,stroke:#005a9e,stroke-width:3px" >> $GITHUB_STEP_SUMMARY
+               ;;
+             "Route53")
+               echo "    B -.->|Also supports| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -->|Native Integration| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+               echo "    C1 -.-> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+               echo "    C2 --> D" >> $GITHUB_STEP_SUMMARY
+               echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    style C2 fill:#FF9900,color:#fff,stroke:#cc7a00,stroke-width:3px" >> $GITHUB_STEP_SUMMARY
+               ;;
+             "Cloud DNS")
+               echo "    B -.->|Also supports| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+               echo "    B -->|Native Integration| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+               echo "    C1 -.-> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+               echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
+               echo "    C4 --> D" >> $GITHUB_STEP_SUMMARY
+               echo "    style C4 fill:#4285F4,color:#fff,stroke:#3367d6,stroke-width:3px" >> $GITHUB_STEP_SUMMARY
+               ;;
+           esac
+           echo "    style B fill:#0066cc,color:#fff,stroke:#003d7a,stroke-width:3px" >> $GITHUB_STEP_SUMMARY
+           echo "    style A fill:#2088FF,color:#fff" >> $GITHUB_STEP_SUMMARY
+           echo "    style D fill:#00C853,color:#fff" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "> **Infoblox UDDI** acts as the central management plane, distributing DNS records to multiple cloud providers" >> $GITHUB_STEP_SUMMARY
