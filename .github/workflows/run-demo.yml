@@ -3,6 +3,12 @@ name: "UDDI - Multi-Cloud DNS"
 on:
   workflow_dispatch:
     inputs:
+      dns_provider:
+        description: "DNS provider for record verification and management"
+        required: true
+        type: choice
+        options: [Cloudflare, "Azure DNS", Route53, "Cloud DNS"]
+        default: Cloudflare
       zone_fqdn:
         description: "Authoritative zone FQDN (must end with a dot)"
         default: "virtualife.pro."
@@ -46,7 +52,7 @@ env:
 
 jobs:
   demo:
-    name: "Deploy DNS via Infoblox UDDI → ${{ inputs.record_type }} Record"
+    name: "Deploy DNS via Infoblox UDDI → ${{ inputs.dns_provider }} ${{ inputs.record_type }} Record"
     runs-on: ubuntu-latest
     environment: dev
     defaults:
