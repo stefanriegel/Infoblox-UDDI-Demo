@@ -845,7 +845,6 @@ jobs:
                 echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
                 echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
                 echo "| **Azure Resource ID** | \`${RECORD_ID}\` |" >> $GITHUB_STEP_SUMMARY
-                echo "| **Record Name** | \`${AZURE_NAME}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **FQDN** | \`${AZURE_FQDN}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **Record Type** | \`${{ inputs.record_type }}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **Target** | \`${AZURE_RECORDS}\` |" >> $GITHUB_STEP_SUMMARY
@@ -898,9 +897,9 @@ jobs:
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
                 echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-                echo "| **Record Name** | \`${ROUTE53_NAME}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **FQDN** | \`${ROUTE53_NAME}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **Record Type** | \`${ROUTE53_TYPE}\` |" >> $GITHUB_STEP_SUMMARY
-                echo "| **Values** | \`${ROUTE53_VALUES}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Target** | \`${ROUTE53_VALUES}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **TTL** | \`${ROUTE53_TTL}s\` |" >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
                 
@@ -935,9 +934,9 @@ jobs:
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
                 echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-                echo "| **Record Name** | \`${GCP_NAME}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **FQDN** | \`${GCP_NAME}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **Record Type** | \`${GCP_TYPE}\` |" >> $GITHUB_STEP_SUMMARY
-                echo "| **Values** | \`${GCP_VALUES}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Target** | \`${GCP_VALUES}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **TTL** | \`${GCP_TTL}s\` |" >> $GITHUB_STEP_SUMMARY
                 echo "" >> $GITHUB_STEP_SUMMARY
                 
