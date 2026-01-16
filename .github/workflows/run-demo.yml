@@ -7,8 +7,8 @@ on:
         description: "DNS provider for record verification and management"
         required: true
         type: choice
-        options: [Cloudflare, "Azure DNS", Route53, "Cloud DNS"]
-        default: Cloudflare
+        options: ["Cloudflare (cf.gh.blox42.rocks)", "Azure DNS (az.gh.blox42.rocks)", "Route53 (aws.gh.blox42.rocks)", "Cloud DNS (gcp.gh.blox42.rocks)"]
+        default: "Cloudflare (cf.gh.blox42.rocks)"
       record_name:
         description: "Record name (label). Use empty for apex records."
         default: "www"
@@ -47,7 +47,7 @@ env:
 
 jobs:
   demo:
-    name: "Deploy DNS via Infoblox UDDI → ${{ inputs.dns_provider }} ${{ inputs.record_type }} Record"
+    name: "Deploy DNS via Infoblox UDDI → ${{ inputs.dns_provider }}"
     runs-on: ubuntu-latest
     environment: dev
     defaults:
@@ -79,18 +79,23 @@ jobs:
       - name: Set Zone FQDN based on provider
         id: set_zone
         run: |
+          # Extract provider name and zone from input
           case "${{ inputs.dns_provider }}" in
-            "Cloudflare")
+            "Cloudflare"*)
               echo "zone_fqdn=cf.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              echo "provider_name=Cloudflare" >> $GITHUB_OUTPUT
               ;;
-            "Azure DNS")
+            "Azure DNS"*)
               echo "zone_fqdn=az.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              echo "provider_name=Azure DNS" >> $GITHUB_OUTPUT
               ;;
-            "Route53")
+            "Route53"*)
               echo "zone_fqdn=aws.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              echo "provider_name=Route53" >> $GITHUB_OUTPUT
               ;;
-            "Cloud DNS")
+            "Cloud DNS"*)
               echo "zone_fqdn=gcp.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              echo "provider_name=Cloud DNS" >> $GITHUB_OUTPUT
               ;;
           esac
 
@@ -368,7 +373,7 @@ jobs:
           echo "============================================"
           
           # Query Azure DNS if Azure DNS provider selected
-          if [ "${{ inputs.dns_provider }}" == "Azure DNS" ]; then
+          if [[ "${{ inputs.dns_provider }}" == "Azure DNS"* ]]; then
             echo ""
             echo "============================================"
             echo "☁️  AZURE DNS DASHBOARD INFO"
@@ -506,16 +511,16 @@ jobs:
             echo "![Automation](https://img.shields.io/badge/Automation-Active-00C853?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
             # Dynamic target badge based on provider
             case "${{ inputs.dns_provider }}" in
-              "Cloudflare")
+              "Cloudflare"*)
                 echo "![Target](https://img.shields.io/badge/Target-Cloudflare-f38020?style=for-the-badge&logo=cloudflare)" >> $GITHUB_STEP_SUMMARY
                 ;;
-              "Azure DNS")
+              "Azure DNS"*)
                 echo "![Target](https://img.shields.io/badge/Target-Azure_DNS-0078D4?style=for-the-badge&logo=microsoftazure)" >> $GITHUB_STEP_SUMMARY
                 ;;
-              "Route53")
+              "Route53"*)
                 echo "![Target](https://img.shields.io/badge/Target-Route53-FF9900?style=for-the-badge&logo=amazonaws)" >> $GITHUB_STEP_SUMMARY
                 ;;
-              "Cloud DNS")
+              "Cloud DNS"*)
                 echo "![Target](https://img.shields.io/badge/Target-Cloud_DNS-4285F4?style=for-the-badge&logo=googlecloud)" >> $GITHUB_STEP_SUMMARY
                 ;;
             esac
@@ -603,7 +608,7 @@ jobs:
             fi
             
             # Provider-specific Dashboard Info
-            if [ "${{ inputs.dns_provider }}" == "Cloudflare" ] && [ -f "cf-response.json" ]; then
+            if [[ "${{ inputs.dns_provider }}" == "Cloudflare"* ]] && [ -f "cf-response.json" ]; then
               echo "## 🎯 Downstream DNS Service: Cloudflare" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
@@ -655,7 +660,7 @@ jobs:
             fi
             
             # Azure DNS Dashboard Info
-            if [ "${{ inputs.dns_provider }}" == "Azure DNS" ] && [ -f "azure-response.json" ]; then
+            if [[ "${{ inputs.dns_provider }}" == "Azure DNS"* ]] && [ -f "azure-response.json" ]; then
               echo "## 🎯 Downstream DNS Service: Azure DNS" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
