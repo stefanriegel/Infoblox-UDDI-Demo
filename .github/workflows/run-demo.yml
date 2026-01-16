@@ -625,23 +625,63 @@ jobs:
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
           
-          # Workflow diagram
+          # Workflow diagram - dynamic based on selected provider
           echo "## 🔄 Automation Architecture" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`mermaid" >> $GITHUB_STEP_SUMMARY
           echo "graph TB" >> $GITHUB_STEP_SUMMARY
           echo "    A[Infrastructure as Code<br/>Terraform] -->|UDDI Provider| B[Infoblox UDDI<br/>Single Source of Truth]" >> $GITHUB_STEP_SUMMARY
-          echo "    B -->|Native Integration| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
-          echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
-          echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
-          echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
-          echo "    C1 --> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
-          echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
-          echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
-          echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
+          
+          # Dynamic diagram based on selected provider
+          case "${{ inputs.dns_provider }}" in
+            "Cloudflare"*)
+              echo "    B -->|Native Integration| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+              echo "    C1 --> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+              echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    style C1 fill:#f38020,color:#fff" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "Azure DNS"*)
+              echo "    B -.->|Also supports| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -->|Native Integration| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+              echo "    C1 -.-> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+              echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    C3 --> D" >> $GITHUB_STEP_SUMMARY
+              echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    style C3 fill:#0078D4,color:#fff" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "Route53"*)
+              echo "    B -.->|Also supports| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -->|Native Integration| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+              echo "    C1 -.-> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+              echo "    C2 --> D" >> $GITHUB_STEP_SUMMARY
+              echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    C4 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    style C2 fill:#FF9900,color:#fff" >> $GITHUB_STEP_SUMMARY
+              ;;
+            "Cloud DNS"*)
+              echo "    B -.->|Also supports| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
+              echo "    B -->|Native Integration| C4[GCP Cloud DNS]" >> $GITHUB_STEP_SUMMARY
+              echo "    C1 -.-> D[Global DNS Resolution]" >> $GITHUB_STEP_SUMMARY
+              echo "    C2 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    C3 -.-> D" >> $GITHUB_STEP_SUMMARY
+              echo "    C4 --> D" >> $GITHUB_STEP_SUMMARY
+              echo "    style C4 fill:#4285F4,color:#fff" >> $GITHUB_STEP_SUMMARY
+              ;;
+          esac
+          
           echo "    style B fill:#0066cc,color:#fff,stroke:#003d7a,stroke-width:3px" >> $GITHUB_STEP_SUMMARY
           echo "    style A fill:#2088FF,color:#fff" >> $GITHUB_STEP_SUMMARY
-          echo "    style C1 fill:#f38020,color:#fff" >> $GITHUB_STEP_SUMMARY
           echo "    style D fill:#00C853,color:#fff" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -664,11 +704,6 @@ jobs:
           echo "| **Type** | \`${{ inputs.record_type }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Value** | \`${{ inputs.record_value }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **TTL** | \`${{ inputs.ttl }}s\` |" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ inputs.orange_cloud }}" == "true" ]; then
-            echo "| **Cloudflare Proxy** | 🟠 **ENABLED** (Orange Cloud) |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| **Cloudflare Proxy** | ⚪ Disabled (DNS Only) |" >> $GITHUB_STEP_SUMMARY
-          fi
           echo "| **Executed** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
