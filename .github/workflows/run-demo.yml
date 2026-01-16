@@ -497,9 +497,9 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
         run: |
-          echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
+          echo "# Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 📊 Executive Summary" >> $GITHUB_STEP_SUMMARY
+          echo "## Executive Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "This demonstration showcases **Infoblox Universal DDI** as a **single source of truth** for DNS management across multiple cloud providers. DNS records created in UDDI are automatically synchronized to downstream DNS services." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -530,7 +530,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Workflow diagram
-          echo "## 🔄 Automation Architecture" >> $GITHUB_STEP_SUMMARY
+          echo "## Automation Architecture" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`mermaid" >> $GITHUB_STEP_SUMMARY
           echo "graph TB" >> $GITHUB_STEP_SUMMARY
@@ -553,7 +553,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Configuration Section
-          echo "## ⚙️ Record Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "## Record Configuration" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -578,7 +578,7 @@ jobs:
           
           # DNS Verification Section
           if [ "${{ inputs.action }}" == "apply" ]; then
-            echo "## 🌐 Global DNS Verification" >> $GITHUB_STEP_SUMMARY
+            echo "## Global DNS Verification" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "*Verified across multiple authoritative DNS resolvers worldwide*" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -609,7 +609,7 @@ jobs:
             
             # Provider-specific Dashboard Info
             if [[ "${{ inputs.dns_provider }}" == "Cloudflare"* ]] && [ -f "cf-response.json" ]; then
-              echo "## 🎯 Downstream DNS Service: Cloudflare" >> $GITHUB_STEP_SUMMARY
+              echo "## Downstream DNS Service: Cloudflare" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
               RECORD_COUNT=$(jq -r '.result | length' cf-response.json 2>/dev/null || echo "0")
@@ -661,7 +661,7 @@ jobs:
             
             # Azure DNS Dashboard Info
             if [[ "${{ inputs.dns_provider }}" == "Azure DNS"* ]] && [ -f "azure-response.json" ]; then
-              echo "## 🎯 Downstream DNS Service: Azure DNS" >> $GITHUB_STEP_SUMMARY
+              echo "## Downstream DNS Service: Azure DNS" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
               RECORD_ID=$(jq -r '.id // empty' azure-response.json 2>/dev/null)
@@ -735,29 +735,39 @@ jobs:
           # Business Value Section
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 💼 Infoblox UDDI Value Proposition" >> $GITHUB_STEP_SUMMARY
+          echo "## Value Proposition" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### ✅ Key Benefits" >> $GITHUB_STEP_SUMMARY
+          echo "### Key Benefits" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **🔒 Unified Management** - Single pane of glass for all DNS across multi-cloud" >> $GITHUB_STEP_SUMMARY
-          echo "- **🤖 Zero-Touch Automation** - Eliminate manual DNS configuration in each cloud provider" >> $GITHUB_STEP_SUMMARY
-          echo "- **🌐 Multi-Cloud Native** - AWS, Azure, GCP, Cloudflare, and more from one platform" >> $GITHUB_STEP_SUMMARY
-          echo "- **🛡️ Consistency & Compliance** - Enforce policies across all DNS services" >> $GITHUB_STEP_SUMMARY
-          echo "- **⚡ Rapid Deployment** - Infrastructure as Code enables GitOps workflows" >> $GITHUB_STEP_SUMMARY
-          echo "- **📊 Complete Visibility** - Centralized audit trail and reporting" >> $GITHUB_STEP_SUMMARY
+          echo "- **Unified Management** - Single pane of glass for all DNS across multi-cloud" >> $GITHUB_STEP_SUMMARY
+          echo "- **Zero-Touch Automation** - Eliminate manual DNS configuration in each cloud provider" >> $GITHUB_STEP_SUMMARY
+          echo "- **Multi-Cloud Native** - AWS, Azure, GCP, Cloudflare, and more from one platform" >> $GITHUB_STEP_SUMMARY
+          echo "- **Consistency & Compliance** - Enforce policies across all DNS services" >> $GITHUB_STEP_SUMMARY
+          echo "- **Rapid Deployment** - Infrastructure as Code enables GitOps workflows" >> $GITHUB_STEP_SUMMARY
+          echo "- **Complete Visibility** - Centralized audit trail and reporting" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Technical Notes
-          echo "### 📖 Technical Notes" >> $GITHUB_STEP_SUMMARY
+          echo "### Technical Implementation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "<details>" >> $GITHUB_STEP_SUMMARY
-          echo "<summary>Implementation Details</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "<summary>Workflow Details for CloudOps/DevOps Teams</summary>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Infrastructure as Code**: Terraform with UDDI provider" >> $GITHUB_STEP_SUMMARY
-          echo "- **State Management**: GitHub Actions cache for ephemeral demos" >> $GITHUB_STEP_SUMMARY
-          echo "- **Auto-Cleanup**: Scheduled workflow runs daily at 00:00 GMT+2" >> $GITHUB_STEP_SUMMARY
-          echo "- **DNS Verification**: Multi-resolver validation (Google, Cloudflare, Quad9)" >> $GITHUB_STEP_SUMMARY
-          echo "- **API Integration**: Direct Cloudflare API for orange cloud configuration" >> $GITHUB_STEP_SUMMARY
+          echo "**How This Workflow Operates:**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. **DNS Record Creation**: Terraform provisions DNS records in Infoblox UDDI via the BloxOne Terraform provider" >> $GITHUB_STEP_SUMMARY
+          echo "2. **Automatic Synchronization**: UDDI native integrations push records to downstream DNS services (Cloudflare, Azure DNS, Route53, Cloud DNS) within seconds" >> $GITHUB_STEP_SUMMARY
+          echo "3. **Multi-Resolver Verification**: Workflow validates DNS propagation across Google (8.8.8.8), Cloudflare (1.1.1.1), and Quad9 (9.9.9.9) resolvers" >> $GITHUB_STEP_SUMMARY
+          echo "4. **Provider API Validation**: Direct API queries to cloud DNS services confirm record deployment and retrieve metadata (TTL, proxy status, provisioning state)" >> $GITHUB_STEP_SUMMARY
+          echo "5. **State Management**: Terraform state cached in GitHub Actions for demo lifecycle management" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Key Technical Aspects:**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- Zone selection is automatic based on DNS provider (e.g., virtualife.pro for Cloudflare, az.gh.blox42.rocks for Azure)" >> $GITHUB_STEP_SUMMARY
+          echo "- Cloudflare Orange Cloud configured via UDDI API PATCH to \`provider_metadata\` after Terraform apply" >> $GITHUB_STEP_SUMMARY
+          echo "- Azure DNS queries use Azure CLI with service principal authentication" >> $GITHUB_STEP_SUMMARY
+          echo "- Automated cleanup workflow runs daily at 00:00 GMT+2 using tag-based resource deletion" >> $GITHUB_STEP_SUMMARY
+          echo "- All credentials stored as GitHub Environment Secrets (environment: dev)" >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
