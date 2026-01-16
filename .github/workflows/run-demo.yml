@@ -534,7 +534,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`mermaid" >> $GITHUB_STEP_SUMMARY
           echo "graph TB" >> $GITHUB_STEP_SUMMARY
-          echo "    A[Infrastructure as Code<br/>Terraform] -->|BloxOne Provider| B[Infoblox UDDI<br/>Single Source of Truth]" >> $GITHUB_STEP_SUMMARY
+          echo "    A[Infrastructure as Code<br/>Terraform] -->|UDDI Provider| B[Infoblox UDDI<br/>Single Source of Truth]" >> $GITHUB_STEP_SUMMARY
           echo "    B -->|Native Integration| C1[Cloudflare]" >> $GITHUB_STEP_SUMMARY
           echo "    B -.->|Also supports| C2[AWS Route53]" >> $GITHUB_STEP_SUMMARY
           echo "    B -.->|Also supports| C3[Azure DNS]" >> $GITHUB_STEP_SUMMARY
@@ -753,7 +753,7 @@ jobs:
           echo "<details>" >> $GITHUB_STEP_SUMMARY
           echo "<summary>Implementation Details</summary>" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Infrastructure as Code**: Terraform with BloxOne provider" >> $GITHUB_STEP_SUMMARY
+          echo "- **Infrastructure as Code**: Terraform with UDDI provider" >> $GITHUB_STEP_SUMMARY
           echo "- **State Management**: GitHub Actions cache for ephemeral demos" >> $GITHUB_STEP_SUMMARY
           echo "- **Auto-Cleanup**: Scheduled workflow runs daily at 00:00 GMT+2" >> $GITHUB_STEP_SUMMARY
           echo "- **DNS Verification**: Multi-resolver validation (Google, Cloudflare, Quad9)" >> $GITHUB_STEP_SUMMARY
@@ -762,6 +762,6 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/bloxone-ddi/)** | Terraform BloxOne Provider | GitHub Actions" >> $GITHUB_STEP_SUMMARY
+          echo "**Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/bloxone-ddi/)** | Terraform UDDI Provider | GitHub Actions" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "*This demo shows one of many cloud providers supported by Infoblox UDDI*" >> $GITHUB_STEP_SUMMARY
