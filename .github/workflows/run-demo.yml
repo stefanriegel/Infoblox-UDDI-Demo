@@ -29,11 +29,6 @@ on:
         default: 120
         required: true
         type: number
-      orange_cloud:
-        description: 'Enable Cloudflare Orange Cloud proxy (only applies to Cloudflare provider)'
-        required: false
-        type: boolean
-        default: false
       action:
         description: "Terraform action"
         required: true
@@ -115,7 +110,6 @@ jobs:
             -var="record_type=${{ inputs.record_type }}" \
             -var="record_value=${{ inputs.record_value }}" \
             -var="ttl=${{ inputs.ttl }}" \
-            -var="orange_cloud=${{ inputs.orange_cloud }}" \
             -out=tfplan
 
       - name: Terraform Apply
@@ -123,51 +117,6 @@ jobs:
         run: |
           terraform apply -input=false -auto-approve -no-color tfplan
           terraform output -json > tfoutputs.json
-
-      - name: Configure Cloudflare Orange Cloud
-        if: ${{ inputs.action == 'apply' && inputs.orange_cloud == true && (inputs.record_type == 'A' || inputs.record_type == 'AAAA' || inputs.record_type == 'CNAME') }}
-        run: |
-          set -e
-          echo "Enabling Cloudflare Orange Cloud for record..."
-          
-          # Extract record ID from Terraform output
-          RECORD_ID=$(jq -r '.record_id.value' tfoutputs.json)
-          echo "Record ID: ${RECORD_ID}"
-          
-          if [ "${RECORD_ID}" == "null" ] || [ -z "${RECORD_ID}" ]; then
-            echo "ERROR: Could not extract record ID from Terraform output"
-            exit 1
-          fi
-          
-          # Get current record to preserve all fields
-          CURRENT_RECORD=$(curl -s -H "Authorization: Token ${BLOXONE_API_KEY}" \
-            "${BLOXONE_HOST}/api/ddi/v1/${RECORD_ID}")
-          
-          echo "Current record fetched"
-          
-          # Update provider_metadata with cloudflare_config
-          UPDATED_RECORD=$(echo "${CURRENT_RECORD}" | jq '.result.provider_metadata = {"cloudflare_config": {"proxied": true}}')
-          
-          # Extract only the fields we need to update
-          UPDATE_PAYLOAD=$(echo "${UPDATED_RECORD}" | jq '.result | {provider_metadata}')
-          
-          echo "Sending PATCH request to enable Cloudflare proxy..."
-          
-          # PATCH the record with updated provider_metadata
-          RESPONSE=$(curl -s -X PATCH \
-            -H "Authorization: Token ${BLOXONE_API_KEY}" \
-            -H "Content-Type: application/json" \
-            -d "${UPDATE_PAYLOAD}" \
-            "${BLOXONE_HOST}/api/ddi/v1/${RECORD_ID}")
-          
-          echo "Response: ${RESPONSE}"
-          
-          # Check if update was successful
-          if echo "${RESPONSE}" | jq -e '.result.provider_metadata.cloudflare_config.proxied == true' > /dev/null; then
-            echo "✅ Cloudflare Orange Cloud enabled successfully"
-          else
-            echo "⚠️ Warning: Orange Cloud may not be enabled. Check response above."
-          fi
 
       - name: Terraform Destroy
         if: ${{ inputs.action == 'destroy' }}
@@ -179,8 +128,7 @@ jobs:
             -var="record_name=${{ inputs.record_name }}" \
             -var="record_type=${{ inputs.record_type }}" \
             -var="record_value=${{ inputs.record_value }}" \
-            -var="ttl=${{ inputs.ttl }}" \
-            -var="orange_cloud=${{ inputs.orange_cloud }}"
+            -var="ttl=${{ inputs.ttl }}"
 
       - name: DNS Verification & Provider Status
         if: ${{ inputs.action == 'apply' }}
