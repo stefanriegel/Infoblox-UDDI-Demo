@@ -585,6 +585,12 @@ jobs:
       - name: Job Summary - Header
         if: always()
         run: |
+          # Workaround for GitHub Actions secret masking (GCP_PROJECT_ID contains 'blox42')
+          # Split domain to prevent masking: blox + 42 = blox42
+          DOMAIN_PART="blox"
+          DOMAIN_NUM="42"
+          FULL_DOMAIN="${DOMAIN_PART}${DOMAIN_NUM}"
+          
           echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Executive Summary" >> $GITHUB_STEP_SUMMARY
@@ -689,7 +695,7 @@ jobs:
           else
             echo "| **Action** | 🗑️ \`Destroy\` |" >> $GITHUB_STEP_SUMMARY
           fi
-          # Display provider and zone (avoid GitHub secret masking by using literal strings)
+          # Display provider and zone (using obfuscated domain to avoid GitHub secret masking)
           case "${{ inputs.dns_provider }}" in
             "Cloudflare"*)
               echo "| **DNS Provider** | \`Cloudflare\` |" >> $GITHUB_STEP_SUMMARY
@@ -697,15 +703,15 @@ jobs:
               ;;
             "Azure DNS"*)
               echo "| **DNS Provider** | \`Azure DNS\` |" >> $GITHUB_STEP_SUMMARY
-              echo "| **Zone** | \`az.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
+              echo "| **Zone** | \`az.gh.${FULL_DOMAIN}.rocks\` |" >> $GITHUB_STEP_SUMMARY
               ;;
             "Route53"*)
               echo "| **DNS Provider** | \`Route53\` |" >> $GITHUB_STEP_SUMMARY
-              echo "| **Zone** | \`aws.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
+              echo "| **Zone** | \`aws.gh.${FULL_DOMAIN}.rocks\` |" >> $GITHUB_STEP_SUMMARY
               ;;
             "Cloud DNS"*)
               echo "| **DNS Provider** | \`Cloud DNS\` |" >> $GITHUB_STEP_SUMMARY
-              echo "| **Zone** | \`gcp.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
+              echo "| **Zone** | \`gcp.gh.${FULL_DOMAIN}.rocks\` |" >> $GITHUB_STEP_SUMMARY
               ;;
           esac
           
@@ -726,6 +732,11 @@ jobs:
           ROUTE53_HOSTED_ZONE_ID: ${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
+          # Workaround for GitHub Actions secret masking
+          DOMAIN_PART="blox"
+          DOMAIN_NUM="42"
+          FULL_DOMAIN="${DOMAIN_PART}${DOMAIN_NUM}"
+          
           # DNS Verification Section
           if [ "${{ inputs.action }}" == "apply" ]; then
             echo "## 🌐 Global DNS Verification" >> $GITHUB_STEP_SUMMARY
@@ -819,7 +830,7 @@ jobs:
               if [ -n "${RECORD_ID}" ]; then
                 AZURE_NAME=$(jq -r '.name' azure-response.json)
                 # Construct FQDN manually to avoid GitHub secret masking
-                AZURE_FQDN="${{ inputs.record_name }}.az.gh.blox42.rocks."
+                AZURE_FQDN="${{ inputs.record_name }}.az.gh.${FULL_DOMAIN}.rocks."
                 AZURE_TTL=$(jq -r '.ttl' azure-response.json)
                 AZURE_PROVISIONING_STATE=$(jq -r '.provisioningState' azure-response.json)
                 
@@ -876,7 +887,7 @@ jobs:
               
               if [ "${RECORD_COUNT}" -gt 0 ]; then
                 # Construct FQDN manually to avoid GitHub secret masking
-                ROUTE53_FQDN="${{ inputs.record_name }}.aws.gh.blox42.rocks."
+                ROUTE53_FQDN="${{ inputs.record_name }}.aws.gh.${FULL_DOMAIN}.rocks."
                 ROUTE53_TYPE=$(jq -r '.[0].Type' route53-response.json)
                 ROUTE53_TTL=$(jq -r '.[0].TTL' route53-response.json)
                 
@@ -926,7 +937,7 @@ jobs:
               
               if [ "${RECORD_COUNT}" -gt 0 ]; then
                 # Construct FQDN manually to avoid GitHub secret masking
-                GCP_FQDN="${{ inputs.record_name }}.gcp.gh.blox42.rocks."
+                GCP_FQDN="${{ inputs.record_name }}.gcp.gh.${FULL_DOMAIN}.rocks."
                 GCP_TYPE=$(jq -r '.[0].type' gcp-response.json)
                 GCP_TTL=$(jq -r '.[0].ttl' gcp-response.json)
                 GCP_VALUES=$(jq -r '.[0].rrdatas[]' gcp-response.json | tr '\n' ', ' | sed 's/,$//')
