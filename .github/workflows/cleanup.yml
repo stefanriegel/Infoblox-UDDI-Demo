@@ -89,15 +89,28 @@ jobs:
             
             echo "Zone ID: ${ZONE_ID}"
             
-            # Query ALL records in zone
-            ALL_RECORDS=$(curl -s -X GET \
-              -H "Authorization: Token ${BLOXONE_API_KEY}" \
-              "${BLOXONE_HOST}/api/ddi/v1/dns/record?_filter=zone==%22${ZONE_ID}%22&_fields=id,name_in_zone,type,rdata,tags,comment")
+            # Query ALL records in zone with pagination
+            ACCUM='[]'
+            PAGE=1
+            while true; do
+              PAGE_RESPONSE=$(curl -s -X GET \
+                -H "Authorization: Token ${BLOXONE_API_KEY}" \
+                "${BLOXONE_HOST}/api/ddi/v1/dns/record?_filter=zone==%22${ZONE_ID}%22&_fields=id,name_in_zone,type,rdata,tags,comment&_limit=500&_page=${PAGE}")
+              PAGE_RECORDS=$(echo "${PAGE_RESPONSE}" | jq '.results // []')
+              PAGE_COUNT=$(echo "${PAGE_RECORDS}" | jq -r 'length')
+              if [ "${PAGE_COUNT}" -eq 0 ]; then
+                break
+              fi
+              ACCUM=$(jq -s '.[0] + .[1]' <(echo "${ACCUM}") <(echo "${PAGE_RECORDS}"))
+              PAGE=$((PAGE + 1))
+            done
             
-            # Filter locally for records with demo=true tag OR Terraform-managed comment
-            ZONE_DEMO_RECORDS=$(echo "${ALL_RECORDS}" | jq '.results | map(select(
+            # Filter locally for records with demo=true tag (robust across tag schemas) OR Terraform-managed comment
+            ZONE_DEMO_RECORDS=$(echo "${ACCUM}" | jq 'map(select(
               (.tags.demo == "true") or 
-              (.comment != null and (.comment | contains("Terraform-managed")))
+              (.tags.demo == true) or 
+              ((.tags | type == "array") and any(.[]; ((.key == "demo" or .name == "demo") and (.value == "true" or .value == true)))) or 
+              (.comment != null and (.comment | test("Terraform-managed"; "i")))
             ))')
             
             ZONE_RECORD_COUNT=$(echo "${ZONE_DEMO_RECORDS}" | jq -r 'length' 2>/dev/null || echo 0)
@@ -106,7 +119,7 @@ jobs:
             
             if [ "${ZONE_RECORD_COUNT}" -gt 0 ]; then
               echo "Records:"
-              echo "${ZONE_DEMO_RECORDS}" | jq -r '.[] | "  - \(.name_in_zone).${ZONE_FQDN%.} (\(.type))"'
+              echo "${ZONE_DEMO_RECORDS}" | jq -r '.[] | "  - \\(.name_in_zone).${ZONE_FQDN%.} (\\(.type))"'
               
               # Merge with existing records
               MERGED=$(jq -s '.[0] + .[1]' /tmp/demo_records.json <(echo "${ZONE_DEMO_RECORDS}"))
@@ -135,7 +148,8 @@ jobs:
         run: |
           set +e  # Don't exit on error, we want to try all deletions
           
-          RECORD_IDS=$(jq -r '.results[].id' /tmp/demo_records.json 2>/dev/null)
+          # Support both array-only and {results:[]} JSON structures
+          RECORD_IDS=$(jq -r 'if type=="object" and has("results") then .results[].id else .[].id end' /tmp/demo_records.json 2>/dev/null)
           
           echo "Found records to delete:"
           echo "${RECORD_IDS}"
