@@ -10,9 +10,8 @@ on:
         options: ["Cloudflare (virtualife.pro)", "Azure DNS (az.gh.blox42.rocks)", "Route53 (aws.gh.blox42.rocks)", "Cloud DNS (gcp.gh.blox42.rocks)"]
         default: "Cloudflare (virtualife.pro)"
       record_name:
-        description: "Record name (label). Use empty for apex records."
-        default: "www"
-        required: false
+        description: "Record name (label)"
+        required: true
         type: string
       record_type:
         description: "DNS record type"
@@ -210,11 +209,7 @@ jobs:
           
           # Construct FQDN
           ZONE_FQDN="${{ steps.set_zone.outputs.zone_fqdn }}"
-          if [ -z "${{ inputs.record_name }}" ]; then
-            FQDN="${ZONE_FQDN}"
-          else
-            FQDN="${{ inputs.record_name }}.${ZONE_FQDN}"
-          fi
+          FQDN="${{ inputs.record_name }}.${ZONE_FQDN}"
           FQDN="${FQDN%.}."
           TYPE="${{ inputs.record_type }}"
           
@@ -400,12 +395,8 @@ jobs:
               
               az account set --subscription "${ARM_SUBSCRIPTION_ID}" 2>/dev/null
               
-              # Construct record name
-              if [ -z "${{ inputs.record_name }}" ]; then
-                RECORD_NAME="@"  # Apex record in Azure DNS
-              else
-                RECORD_NAME="${{ inputs.record_name }}"
-              fi
+              # Use record name directly
+              RECORD_NAME="${{ inputs.record_name }}"
               
               echo "Querying Azure DNS for: ${RECORD_NAME} (${{ inputs.record_type }})"
               echo "Zone: ${AZURE_ZONE_NAME}"
@@ -491,12 +482,8 @@ jobs:
             
             # Check if AWS credentials are configured
             if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${ROUTE53_HOSTED_ZONE_ID}" ]; then
-              # Construct record name
-              if [ -z "${{ inputs.record_name }}" ]; then
-                RECORD_FQDN="${ROUTE53_ZONE}"
-              else
-                RECORD_FQDN="${{ inputs.record_name }}.${ROUTE53_ZONE}"
-              fi
+              # Construct FQDN
+              RECORD_FQDN="${{ inputs.record_name }}.${ROUTE53_ZONE}"
               
               echo "Querying Route53 for: ${RECORD_FQDN} (${{ inputs.record_type }})"
               echo "Hosted Zone ID: ${ROUTE53_HOSTED_ZONE_ID}"
@@ -578,12 +565,8 @@ jobs:
               echo "${GOOGLE_CREDENTIALS}" | gcloud auth activate-service-account --key-file=- 2>/dev/null
               gcloud config set project "${GCP_PROJECT_ID}" 2>/dev/null
               
-              # Construct record name
-              if [ -z "${{ inputs.record_name }}" ]; then
-                RECORD_FQDN="${GCP_ZONE_DNS}"
-              else
-                RECORD_FQDN="${{ inputs.record_name }}.${GCP_ZONE_DNS}"
-              fi
+              # Construct FQDN
+              RECORD_FQDN="${{ inputs.record_name }}.${GCP_ZONE_DNS}"
               
               echo "Querying Cloud DNS for: ${RECORD_FQDN} (${{ inputs.record_type }})"
               echo "Zone: ${GCP_ZONE_NAME}"
