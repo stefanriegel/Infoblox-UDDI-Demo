@@ -60,51 +60,75 @@ jobs:
         id: find_records
         run: |
           echo "Querying UDDI API for all demo records (tag: demo=true)..."
-          
-          # Get zone ID first
-          ZONE_RESPONSE=$(curl -s -X GET \
-            -H "Authorization: Token ${BLOXONE_API_KEY}" \
-            "${BLOXONE_HOST}/api/ddi/v1/dns/auth_zone?_filter=fqdn==%22virtualife.pro.%22")
-          
-          ZONE_ID=$(echo "${ZONE_RESPONSE}" | jq -r '.results[0].id' 2>/dev/null)
-          
-          if [ -z "${ZONE_ID}" ] || [ "${ZONE_ID}" == "null" ]; then
-            echo "⚠️ Could not find zone virtualife.pro."
-            echo "has_records=false" >> $GITHUB_OUTPUT
-            echo "record_count=0" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          
-          echo "Zone ID: ${ZONE_ID}"
           echo ""
           
-          # Query ALL records in zone (API doesn't support tag filtering)
-          echo "Fetching all records in zone..."
-          ALL_RECORDS=$(curl -s -X GET \
-            -H "Authorization: Token ${BLOXONE_API_KEY}" \
-            "${BLOXONE_HOST}/api/ddi/v1/dns/record?_filter=zone==%22${ZONE_ID}%22&_fields=id,name_in_zone,type,rdata,tags,comment")
+          # Define all zones to check
+          ZONES=("virtualife.pro." "az.gh.blox42.rocks." "aws.gh.blox42.rocks." "gcp.gh.blox42.rocks.")
           
-          # Filter locally for records with demo=true tag OR Terraform-managed comment
-          DEMO_RECORDS=$(echo "${ALL_RECORDS}" | jq '.results | map(select(
-            (.tags.demo == "true") or 
-            (.comment != null and (.comment | contains("Terraform-managed")))
-          ))')
+          # Initialize empty array for all demo records
+          echo '[]' > /tmp/demo_records.json
+          TOTAL_RECORD_COUNT=0
           
-          echo "{\"results\": ${DEMO_RECORDS}}" > /tmp/demo_records.json
+          for ZONE_FQDN in "${ZONES[@]}"; do
+            echo "----------------------------------------"
+            echo "Checking zone: ${ZONE_FQDN}"
+            echo "----------------------------------------"
+            
+            # Get zone ID
+            ZONE_RESPONSE=$(curl -s -X GET \
+              -H "Authorization: Token ${BLOXONE_API_KEY}" \
+              "${BLOXONE_HOST}/api/ddi/v1/dns/auth_zone?_filter=fqdn==%22${ZONE_FQDN}%22")
+            
+            ZONE_ID=$(echo "${ZONE_RESPONSE}" | jq -r '.results[0].id' 2>/dev/null)
+            
+            if [ -z "${ZONE_ID}" ] || [ "${ZONE_ID}" == "null" ]; then
+              echo "⚠️ Zone not found: ${ZONE_FQDN}"
+              echo ""
+              continue
+            fi
+            
+            echo "Zone ID: ${ZONE_ID}"
+            
+            # Query ALL records in zone
+            ALL_RECORDS=$(curl -s -X GET \
+              -H "Authorization: Token ${BLOXONE_API_KEY}" \
+              "${BLOXONE_HOST}/api/ddi/v1/dns/record?_filter=zone==%22${ZONE_ID}%22&_fields=id,name_in_zone,type,rdata,tags,comment")
+            
+            # Filter locally for records with demo=true tag OR Terraform-managed comment
+            ZONE_DEMO_RECORDS=$(echo "${ALL_RECORDS}" | jq '.results | map(select(
+              (.tags.demo == "true") or 
+              (.comment != null and (.comment | contains("Terraform-managed")))
+            ))')
+            
+            ZONE_RECORD_COUNT=$(echo "${ZONE_DEMO_RECORDS}" | jq -r 'length' 2>/dev/null || echo 0)
+            
+            echo "Found ${ZONE_RECORD_COUNT} demo records in this zone"
+            
+            if [ "${ZONE_RECORD_COUNT}" -gt 0 ]; then
+              echo "Records:"
+              echo "${ZONE_DEMO_RECORDS}" | jq -r '.[] | "  - \(.name_in_zone).${ZONE_FQDN%.} (\(.type))"'
+              
+              # Merge with existing records
+              MERGED=$(jq -s '.[0] + .[1]' /tmp/demo_records.json <(echo "${ZONE_DEMO_RECORDS}"))
+              echo "${MERGED}" > /tmp/demo_records.json
+              
+              TOTAL_RECORD_COUNT=$((TOTAL_RECORD_COUNT + ZONE_RECORD_COUNT))
+            fi
+            
+            echo ""
+          done
           
-          RECORD_COUNT=$(echo "${DEMO_RECORDS}" | jq -r 'length' 2>/dev/null || echo 0)
+          echo "========================================"
+          echo "Total demo records found: ${TOTAL_RECORD_COUNT}"
+          echo "========================================"
           
-          echo "Found ${RECORD_COUNT} demo records to delete"
-          
-          if [ "${RECORD_COUNT}" -gt 0 ]; then
-            echo "Demo records:"
-            echo "${DEMO_RECORDS}" | jq -r '.[] | "  - \(.name_in_zone) (\(.type))"'
+          if [ "${TOTAL_RECORD_COUNT}" -gt 0 ]; then
             echo "has_records=true" >> $GITHUB_OUTPUT
           else
             echo "has_records=false" >> $GITHUB_OUTPUT
           fi
           
-          echo "record_count=${RECORD_COUNT}" >> $GITHUB_OUTPUT
+          echo "record_count=${TOTAL_RECORD_COUNT}" >> $GITHUB_OUTPUT
 
       - name: Delete demo records via API
         if: steps.find_records.outputs.has_records == 'true'
@@ -160,7 +184,13 @@ jobs:
         run: |
           echo "## 🗑️ Automated Cleanup Report" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Strategy:** Tag-based cleanup (finds all records with \`demo=true\` tag)" >> $GITHUB_STEP_SUMMARY
+          echo "**Strategy:** Multi-zone tag-based cleanup (finds all records with \`demo=true\` tag across all DNS zones)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Zones Scanned:**" >> $GITHUB_STEP_SUMMARY
+          echo "- \`virtualife.pro.\` (Cloudflare)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`az.gh.blox42.rocks.\` (Azure DNS)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`aws.gh.blox42.rocks.\` (Route53)" >> $GITHUB_STEP_SUMMARY
+          echo "- \`gcp.gh.blox42.rocks.\` (Cloud DNS)" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
