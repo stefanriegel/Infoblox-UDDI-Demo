@@ -7,8 +7,8 @@ on:
         description: "DNS provider for record verification and management"
         required: true
         type: choice
-        options: ["Cloudflare (cf.gh.blox42.rocks)", "Azure DNS (az.gh.blox42.rocks)", "Route53 (aws.gh.blox42.rocks)", "Cloud DNS (gcp.gh.blox42.rocks)"]
-        default: "Cloudflare (cf.gh.blox42.rocks)"
+        options: ["Cloudflare (virtualife.pro)", "Azure DNS (az.gh.blox42.rocks)", "Route53 (aws.gh.blox42.rocks)", "Cloud DNS (gcp.gh.blox42.rocks)"]
+        default: "Cloudflare (virtualife.pro)"
       record_name:
         description: "Record name (label). Use empty for apex records."
         default: "www"
@@ -82,7 +82,7 @@ jobs:
           # Extract provider name and zone from input
           case "${{ inputs.dns_provider }}" in
             "Cloudflare"*)
-              echo "zone_fqdn=cf.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              echo "zone_fqdn=virtualife.pro." >> $GITHUB_OUTPUT
               echo "provider_name=Cloudflare" >> $GITHUB_OUTPUT
               ;;
             "Azure DNS"*)
