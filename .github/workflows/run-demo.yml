@@ -10,7 +10,7 @@ on:
         options: ["Cloudflare (virtualife.pro)", "Azure DNS (az.gh.blox42.rocks)", "Route53 (aws.gh.blox42.rocks)", "Cloud DNS (gcp.gh.blox42.rocks)"]
         default: "Cloudflare (virtualife.pro)"
       record_name:
-        description: "Record name (label)"
+        description: "DNS hostname"
         required: true
         type: string
       record_type:
