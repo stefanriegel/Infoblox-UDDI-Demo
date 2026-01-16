@@ -165,11 +165,17 @@ jobs:
             -var="ttl=${{ inputs.ttl }}" \
             -var="orange_cloud=${{ inputs.orange_cloud }}"
 
-      - name: DNS Verification & Cloudflare Status
+      - name: DNS Verification & Provider Status
         if: ${{ inputs.action == 'apply' }}
         env:
           CF_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          AZURE_DNS_ZONE_NAME: ${{ secrets.AZURE_DNS_ZONE_NAME }}
+          AZURE_DNS_RESOURCE_GROUP: ${{ secrets.AZURE_DNS_RESOURCE_GROUP }}
         run: |
           set -e
           
@@ -346,6 +352,103 @@ jobs:
           fi
           echo ""
           echo "============================================"
+          
+          # Query Azure DNS if Azure DNS provider selected
+          if [ "${{ inputs.dns_provider }}" == "Azure DNS" ]; then
+            echo ""
+            echo "============================================"
+            echo "☁️  AZURE DNS DASHBOARD INFO"
+            echo "============================================"
+            echo ""
+            
+            # Check if Azure credentials are configured
+            if [ -n "${ARM_CLIENT_ID}" ] && [ -n "${AZURE_DNS_ZONE_NAME}" ]; then
+              # Login to Azure
+              echo "Authenticating with Azure..."
+              az login --service-principal \
+                --username "${ARM_CLIENT_ID}" \
+                --password "${ARM_CLIENT_SECRET}" \
+                --tenant "${ARM_TENANT_ID}" --output none 2>/dev/null
+              
+              az account set --subscription "${ARM_SUBSCRIPTION_ID}" 2>/dev/null
+              
+              # Construct record name
+              if [ -z "${{ inputs.record_name }}" ]; then
+                RECORD_NAME="@"  # Apex record in Azure DNS
+              else
+                RECORD_NAME="${{ inputs.record_name }}"
+              fi
+              
+              echo "Querying Azure DNS for: ${RECORD_NAME} (${{ inputs.record_type }})"
+              echo "Zone: ${AZURE_DNS_ZONE_NAME}"
+              echo "Resource Group: ${AZURE_DNS_RESOURCE_GROUP}"
+              echo ""
+              
+              # Query Azure DNS for the record
+              AZURE_RESPONSE=$(az network dns record-set ${{ inputs.record_type }} show \
+                --resource-group "${AZURE_DNS_RESOURCE_GROUP}" \
+                --zone-name "${AZURE_DNS_ZONE_NAME}" \
+                --name "${RECORD_NAME}" \
+                --output json 2>/dev/null || echo '{}')
+              
+              echo "${AZURE_RESPONSE}" > azure-response.json
+              
+              # Check if record exists
+              RECORD_ID=$(echo "${AZURE_RESPONSE}" | jq -r '.id // empty' 2>/dev/null)
+              
+              if [ -n "${RECORD_ID}" ]; then
+                echo "✅ Record found in Azure DNS"
+                echo ""
+                
+                # Extract record details
+                AZURE_NAME=$(echo "${AZURE_RESPONSE}" | jq -r '.name')
+                AZURE_FQDN=$(echo "${AZURE_RESPONSE}" | jq -r '.fqdn')
+                AZURE_TTL=$(echo "${AZURE_RESPONSE}" | jq -r '.ttl')
+                AZURE_PROVISIONING_STATE=$(echo "${AZURE_RESPONSE}" | jq -r '.provisioningState')
+                
+                # Extract record-specific data based on type
+                case "${{ inputs.record_type }}" in
+                  A)
+                    AZURE_RECORDS=$(echo "${AZURE_RESPONSE}" | jq -r '.aRecords[].ipv4Address' | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                  AAAA)
+                    AZURE_RECORDS=$(echo "${AZURE_RESPONSE}" | jq -r '.aaaaRecords[].ipv6Address' | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                  CNAME)
+                    AZURE_RECORDS=$(echo "${AZURE_RESPONSE}" | jq -r '.cnameRecord.cname')
+                    ;;
+                  TXT)
+                    AZURE_RECORDS=$(echo "${AZURE_RESPONSE}" | jq -r '.txtRecords[].value[]' | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                esac
+                
+                echo "📋 Record Details:"
+                echo "   ID: ${RECORD_ID}"
+                echo "   Name: ${AZURE_NAME}"
+                echo "   FQDN: ${AZURE_FQDN}"
+                echo "   Type: ${{ inputs.record_type }}"
+                echo "   Records: ${AZURE_RECORDS}"
+                echo "   TTL: ${AZURE_TTL}"
+                echo "   Provisioning State: ${AZURE_PROVISIONING_STATE}"
+                echo ""
+                
+                # Azure Portal link
+                echo "🔗 Azure Portal:"
+                RESOURCE_GROUP_ENCODED=$(echo "${AZURE_DNS_RESOURCE_GROUP}" | jq -sRr @uri)
+                ZONE_ENCODED=$(echo "${AZURE_DNS_ZONE_NAME}" | jq -sRr @uri)
+                echo "   https://portal.azure.com/#@${ARM_TENANT_ID}/resource/subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP_ENCODED}/providers/Microsoft.Network/dnszones/${ZONE_ENCODED}/overview"
+              else
+                echo "⚠️  Record not yet synced to Azure DNS"
+                echo "   (UDDI sync may take a few moments)"
+              fi
+            else
+              echo "ℹ️  Azure DNS credentials not configured"
+              echo "   Set ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID,"
+              echo "   AZURE_DNS_ZONE_NAME, and AZURE_DNS_RESOURCE_GROUP secrets to enable dashboard info"
+            fi
+            echo ""
+            echo "============================================"
+          fi
 
       - name: Upload artifacts (proof)
         if: always()
@@ -359,6 +462,7 @@ jobs:
             live/demos/dns/dig-quad9.txt
             live/demos/dns/dig-full.txt
             live/demos/dns/cf-response.json
+            live/demos/dns/azure-response.json
             live/demos/dns/terraform.tfstate
           if-no-files-found: ignore
           retention-days: 7
@@ -367,12 +471,15 @@ jobs:
         if: always()
         env:
           CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          AZURE_DNS_RESOURCE_GROUP: ${{ secrets.AZURE_DNS_RESOURCE_GROUP }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
         run: |
           echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## 📊 Executive Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This demonstration showcases **Infoblox Universal DDI** as a **single source of truth** for DNS management across multiple cloud providers. DNS records created in UDDI are automatically synchronized to downstream DNS services (demonstrated with Cloudflare)." >> $GITHUB_STEP_SUMMARY
+          echo "This demonstration showcases **Infoblox Universal DDI** as a **single source of truth** for DNS management across multiple cloud providers. DNS records created in UDDI are automatically synchronized to downstream DNS services." >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Status badges
@@ -380,7 +487,21 @@ jobs:
             echo "![Status](https://img.shields.io/badge/Status-Deployed-success?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
             echo "![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
             echo "![Automation](https://img.shields.io/badge/Automation-Active-00C853?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
-            echo "![Target](https://img.shields.io/badge/Target-Cloudflare-f38020?style=for-the-badge&logo=cloudflare)" >> $GITHUB_STEP_SUMMARY
+            # Dynamic target badge based on provider
+            case "${{ inputs.dns_provider }}" in
+              "Cloudflare")
+                echo "![Target](https://img.shields.io/badge/Target-Cloudflare-f38020?style=for-the-badge&logo=cloudflare)" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "Azure DNS")
+                echo "![Target](https://img.shields.io/badge/Target-Azure_DNS-0078D4?style=for-the-badge&logo=microsoftazure)" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "Route53")
+                echo "![Target](https://img.shields.io/badge/Target-Route53-FF9900?style=for-the-badge&logo=amazonaws)" >> $GITHUB_STEP_SUMMARY
+                ;;
+              "Cloud DNS")
+                echo "![Target](https://img.shields.io/badge/Target-Cloud_DNS-4285F4?style=for-the-badge&logo=googlecloud)" >> $GITHUB_STEP_SUMMARY
+                ;;
+            esac
           else
             echo "![Status](https://img.shields.io/badge/Status-Destroyed-critical?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
           fi
@@ -463,9 +584,9 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
             
-            # Cloudflare Dashboard Info
-            if [ -f "cf-response.json" ]; then
-              echo "## 🎯 Downstream DNS Service (Example: Cloudflare)" >> $GITHUB_STEP_SUMMARY
+            # Provider-specific Dashboard Info
+            if [ "${{ inputs.dns_provider }}" == "Cloudflare" ] && [ -f "cf-response.json" ]; then
+              echo "## 🎯 Downstream DNS Service: Cloudflare" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
               
               RECORD_COUNT=$(jq -r '.result | length' cf-response.json 2>/dev/null || echo "0")
@@ -508,6 +629,64 @@ jobs:
                   echo "### 🔗 Management Links" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
                   echo "[📡 View in Cloudflare Dashboard](https://dash.cloudflare.com/${CF_ZONE_ID}/dns/records)" >> $GITHUB_STEP_SUMMARY
+                fi
+              else
+                echo "> ⏳ Record synchronization in progress (typically completes within seconds)" >> $GITHUB_STEP_SUMMARY
+              fi
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Azure DNS Dashboard Info
+            if [ "${{ inputs.dns_provider }}" == "Azure DNS" ] && [ -f "azure-response.json" ]; then
+              echo "## 🎯 Downstream DNS Service: Azure DNS" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              RECORD_ID=$(jq -r '.id // empty' azure-response.json 2>/dev/null)
+              
+              if [ -n "${RECORD_ID}" ]; then
+                AZURE_NAME=$(jq -r '.name' azure-response.json)
+                AZURE_FQDN=$(jq -r '.fqdn' azure-response.json)
+                AZURE_TTL=$(jq -r '.ttl' azure-response.json)
+                AZURE_PROVISIONING_STATE=$(jq -r '.provisioningState' azure-response.json)
+                
+                # Extract record-specific data based on type
+                case "${{ inputs.record_type }}" in
+                  A)
+                    AZURE_RECORDS=$(jq -r '.aRecords[].ipv4Address' azure-response.json | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                  AAAA)
+                    AZURE_RECORDS=$(jq -r '.aaaaRecords[].ipv6Address' azure-response.json | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                  CNAME)
+                    AZURE_RECORDS=$(jq -r '.cnameRecord.cname' azure-response.json)
+                    ;;
+                  TXT)
+                    AZURE_RECORDS=$(jq -r '.txtRecords[].value[]' azure-response.json | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                esac
+                
+                echo "> ✅ **Synchronization Complete** - Record successfully deployed to Azure DNS" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                
+                echo "### Record Details" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+                echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+                echo "| **Azure Resource ID** | \`${RECORD_ID}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Record Name** | \`${AZURE_NAME}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **FQDN** | \`${AZURE_FQDN}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Record Type** | \`${{ inputs.record_type }}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Target** | \`${AZURE_RECORDS}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **TTL** | \`${AZURE_TTL}s\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Provisioning State** | \`${AZURE_PROVISIONING_STATE}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                
+                if [ -n "${AZURE_DNS_RESOURCE_GROUP}" ]; then
+                  echo "### 🔗 Management Links" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  RESOURCE_GROUP_ENCODED=$(echo "${AZURE_DNS_RESOURCE_GROUP}" | jq -sRr @uri)
+                  ZONE_ENCODED=$(echo "${{ inputs.zone_fqdn }}" | sed 's/\.$//' | jq -sRr @uri)
+                  echo "[🌐 View in Azure Portal](https://portal.azure.com/#@${ARM_TENANT_ID}/resource/subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP_ENCODED}/providers/Microsoft.Network/dnszones/${ZONE_ENCODED}/overview)" >> $GITHUB_STEP_SUMMARY
                 fi
               else
                 echo "> ⏳ Record synchronization in progress (typically completes within seconds)" >> $GITHUB_STEP_SUMMARY
