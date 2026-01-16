@@ -690,20 +690,22 @@ jobs:
           else
             echo "| **Action** | 🗑️ \`Destroy\` |" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "| **DNS Provider** | \`${{ inputs.dns_provider }}\` |" >> $GITHUB_STEP_SUMMARY
-          
-          # Display zone based on provider (avoid GitHub secret masking)
+          # Display provider and zone (avoid GitHub secret masking by using literal strings)
           case "${{ inputs.dns_provider }}" in
             "Cloudflare"*)
+              echo "| **DNS Provider** | \`Cloudflare\` |" >> $GITHUB_STEP_SUMMARY
               echo "| **Zone** | \`virtualife.pro\` |" >> $GITHUB_STEP_SUMMARY
               ;;
             "Azure DNS"*)
+              echo "| **DNS Provider** | \`Azure DNS\` |" >> $GITHUB_STEP_SUMMARY
               echo "| **Zone** | \`az.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
               ;;
             "Route53"*)
+              echo "| **DNS Provider** | \`Route53\` |" >> $GITHUB_STEP_SUMMARY
               echo "| **Zone** | \`aws.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
               ;;
             "Cloud DNS"*)
+              echo "| **DNS Provider** | \`Cloud DNS\` |" >> $GITHUB_STEP_SUMMARY
               echo "| **Zone** | \`gcp.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
               ;;
           esac
