@@ -92,17 +92,37 @@ jobs:
             # Query ALL records in zone with pagination
             ACCUM='[]'
             PAGE=1
+            MAX_PAGES=20
+            PREV_HASH=""
             while true; do
-              PAGE_RESPONSE=$(curl -s -X GET \
+              PAGE_RESPONSE=$(curl -sS --fail --max-time 30 -X GET \
                 -H "Authorization: Token ${BLOXONE_API_KEY}" \
-                "${BLOXONE_HOST}/api/ddi/v1/dns/record?_filter=zone==%22${ZONE_ID}%22&_fields=id,name_in_zone,type,rdata,tags,comment&_limit=500&_page=${PAGE}")
+                "${BLOXONE_HOST}/api/ddi/v1/dns/record?_filter=zone==%22${ZONE_ID}%22&_fields=id,name_in_zone,type,rdata,tags,comment&_limit=500&_page=${PAGE}") || {
+                  echo "⚠️ API request failed or timed out on page ${PAGE}; stopping pagination";
+                  break;
+                }
               PAGE_RECORDS=$(echo "${PAGE_RESPONSE}" | jq '.results // []')
               PAGE_COUNT=$(echo "${PAGE_RECORDS}" | jq -r 'length')
               if [ "${PAGE_COUNT}" -eq 0 ]; then
                 break
               fi
+              # Detect repeating page (API ignoring _page) to avoid infinite loop
+              CUR_HASH=$(echo "${PAGE_RECORDS}" | jq -r 'map(.id) | join("|")')
+              if [ -n "${PREV_HASH}" ] && [ "${CUR_HASH}" = "${PREV_HASH}" ]; then
+                echo "ℹ️ Pagination appears unsupported (repeating page); stopping after page ${PAGE}"
+                break
+              fi
+              PREV_HASH="${CUR_HASH}"
               ACCUM=$(jq -s '.[0] + .[1]' <(echo "${ACCUM}") <(echo "${PAGE_RECORDS}"))
+              # If returned fewer than limit, last page reached
+              if [ "${PAGE_COUNT}" -lt 500 ]; then
+                break
+              fi
               PAGE=$((PAGE + 1))
+              if [ ${PAGE} -gt ${MAX_PAGES} ]; then
+                echo "ℹ️ Reached safety limit of ${MAX_PAGES} pages; stopping pagination"
+                break
+              fi
             done
             
             # Filter locally for records with demo=true tag (robust across tag schemas) OR Terraform-managed comment
