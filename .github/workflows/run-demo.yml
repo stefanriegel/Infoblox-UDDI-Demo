@@ -9,11 +9,6 @@ on:
         type: choice
         options: [Cloudflare, "Azure DNS", Route53, "Cloud DNS"]
         default: Cloudflare
-      zone_fqdn:
-        description: "Authoritative zone FQDN (must end with a dot)"
-        default: "virtualife.pro."
-        required: true
-        type: string
       record_name:
         description: "Record name (label). Use empty for apex records."
         default: "www"
@@ -79,7 +74,25 @@ jobs:
             live/demos/dns/.terraform.lock.hcl
             live/demos/dns/terraform.tfstate
             live/demos/dns/terraform.tfstate.backup
-          key: tfstate-${{ github.workflow }}-${{ github.ref_name }}-${{ inputs.zone_fqdn }}-${{ inputs.record_name }}-${{ inputs.record_type }}
+          key: tfstate-${{ github.workflow }}-${{ github.ref_name }}-${{ inputs.dns_provider }}-${{ inputs.record_name }}-${{ inputs.record_type }}
+
+      - name: Set Zone FQDN based on provider
+        id: set_zone
+        run: |
+          case "${{ inputs.dns_provider }}" in
+            "Cloudflare")
+              echo "zone_fqdn=cf.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              ;;
+            "Azure DNS")
+              echo "zone_fqdn=az.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              ;;
+            "Route53")
+              echo "zone_fqdn=aws.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              ;;
+            "Cloud DNS")
+              echo "zone_fqdn=gcp.gh.blox42.rocks." >> $GITHUB_OUTPUT
+              ;;
+          esac
 
       - name: Terraform Init
         run: terraform init -input=false -no-color
@@ -93,7 +106,7 @@ jobs:
           terraform plan -input=false -no-color \
             -var="bloxone_host=${BLOXONE_HOST:-https://csp.infoblox.com}" \
             -var="bloxone_api_key=${BLOXONE_API_KEY}" \
-            -var="zone_fqdn=${{ inputs.zone_fqdn }}" \
+            -var="zone_fqdn=${{ steps.set_zone.outputs.zone_fqdn }}" \
             -var="record_name=${{ inputs.record_name }}" \
             -var="record_type=${{ inputs.record_type }}" \
             -var="record_value=${{ inputs.record_value }}" \
@@ -158,7 +171,7 @@ jobs:
           terraform destroy -input=false -auto-approve -no-color \
             -var="bloxone_host=${BLOXONE_HOST:-https://csp.infoblox.com}" \
             -var="bloxone_api_key=${BLOXONE_API_KEY}" \
-            -var="zone_fqdn=${{ inputs.zone_fqdn }}" \
+            -var="zone_fqdn=${{ steps.set_zone.outputs.zone_fqdn }}" \
             -var="record_name=${{ inputs.record_name }}" \
             -var="record_type=${{ inputs.record_type }}" \
             -var="record_value=${{ inputs.record_value }}" \
@@ -185,10 +198,11 @@ jobs:
           echo ""
           
           # Construct FQDN
+          ZONE_FQDN="${{ steps.set_zone.outputs.zone_fqdn }}"
           if [ -z "${{ inputs.record_name }}" ]; then
-            FQDN="${{ inputs.zone_fqdn }}"
+            FQDN="${ZONE_FQDN}"
           else
-            FQDN="${{ inputs.record_name }}.${{ inputs.zone_fqdn }}"
+            FQDN="${{ inputs.record_name }}.${ZONE_FQDN}"
           fi
           FQDN="${FQDN%.}."
           TYPE="${{ inputs.record_type }}"
@@ -240,7 +254,7 @@ jobs:
             
             # Auto-discover zone ID if not provided
             if [ -z "${CF_ZONE_ID}" ]; then
-              echo "CF_ZONE_ID not set, looking up zone for ${{ inputs.zone_fqdn }}..."
+              echo "CF_ZONE_ID not set, looking up zone for ${ZONE_FQDN}..."
               ZONE_NAME="${FQDN#*.}"  # Remove first label to get zone
               ZONE_NAME="${ZONE_NAME%.}"  # Remove trailing dot
               echo "Looking for zone: ${ZONE_NAME}"
@@ -361,8 +375,11 @@ jobs:
             echo "============================================"
             echo ""
             
+            # Determine Azure DNS zone name from provider
+            AZURE_ZONE_NAME="${ZONE_FQDN%.}"
+            
             # Check if Azure credentials are configured
-            if [ -n "${ARM_CLIENT_ID}" ] && [ -n "${AZURE_DNS_ZONE_NAME}" ]; then
+            if [ -n "${ARM_CLIENT_ID}" ] && [ -n "${AZURE_DNS_RESOURCE_GROUP}" ]; then
               # Login to Azure
               echo "Authenticating with Azure..."
               az login --service-principal \
@@ -380,14 +397,14 @@ jobs:
               fi
               
               echo "Querying Azure DNS for: ${RECORD_NAME} (${{ inputs.record_type }})"
-              echo "Zone: ${AZURE_DNS_ZONE_NAME}"
+              echo "Zone: ${AZURE_ZONE_NAME}"
               echo "Resource Group: ${AZURE_DNS_RESOURCE_GROUP}"
               echo ""
               
               # Query Azure DNS for the record
               AZURE_RESPONSE=$(az network dns record-set ${{ inputs.record_type }} show \
                 --resource-group "${AZURE_DNS_RESOURCE_GROUP}" \
-                --zone-name "${AZURE_DNS_ZONE_NAME}" \
+                --zone-name "${AZURE_ZONE_NAME}" \
                 --name "${RECORD_NAME}" \
                 --output json 2>/dev/null || echo '{}')
               
@@ -444,7 +461,7 @@ jobs:
             else
               echo "ℹ️  Azure DNS credentials not configured"
               echo "   Set ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_TENANT_ID, ARM_SUBSCRIPTION_ID,"
-              echo "   AZURE_DNS_ZONE_NAME, and AZURE_DNS_RESOURCE_GROUP secrets to enable dashboard info"
+              echo "   and AZURE_DNS_RESOURCE_GROUP secrets to enable dashboard info"
             fi
             echo ""
             echo "============================================"
@@ -540,7 +557,8 @@ jobs:
           else
             echo "| **Action** | 🗑️ \`Destroy\` |" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "| **Zone** | \`${{ inputs.zone_fqdn }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **DNS Provider** | \`${{ inputs.dns_provider }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Zone** | \`${{ steps.set_zone.outputs.zone_fqdn }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Record Name** | \`${{ inputs.record_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Type** | \`${{ inputs.record_type }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Value** | \`${{ inputs.record_value }}\` |" >> $GITHUB_STEP_SUMMARY
@@ -685,7 +703,7 @@ jobs:
                   echo "### 🔗 Management Links" >> $GITHUB_STEP_SUMMARY
                   echo "" >> $GITHUB_STEP_SUMMARY
                   RESOURCE_GROUP_ENCODED=$(echo "${AZURE_DNS_RESOURCE_GROUP}" | jq -sRr @uri)
-                  ZONE_ENCODED=$(echo "${{ inputs.zone_fqdn }}" | sed 's/\.$//' | jq -sRr @uri)
+                  ZONE_ENCODED=$(echo "${{ steps.set_zone.outputs.zone_fqdn }}" | sed 's/\.$//' | jq -sRr @uri)
                   echo "[🌐 View in Azure Portal](https://portal.azure.com/#@${ARM_TENANT_ID}/resource/subscriptions/${ARM_SUBSCRIPTION_ID}/resourceGroups/${RESOURCE_GROUP_ENCODED}/providers/Microsoft.Network/dnszones/${ZONE_ENCODED}/overview)" >> $GITHUB_STEP_SUMMARY
                 fi
               else

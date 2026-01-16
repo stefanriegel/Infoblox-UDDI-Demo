@@ -48,10 +48,12 @@ Or use managed policy: `AmazonVPCFullAccess`
 
 | Secret Name | Value | Description |
 |------------|-------|-------------|
-| `AZURE_DNS_ZONE_NAME` | `<zone-name>` | Azure DNS Zone Name (e.g., `example.com`) |
 | `AZURE_DNS_RESOURCE_GROUP` | `<resource-group>` | Resource Group containing the DNS zone |
 
-**Note:** Reuses the same Azure credentials (`ARM_*` secrets) from VPC demo. Requires `DNS Zone Contributor` role or `Contributor` role on the resource group.
+**Note:** 
+- Zone name is automatically determined based on selected provider (`az.gh.blox42.rocks` for Azure DNS)
+- Reuses the same Azure credentials (`ARM_*` secrets) from VPC demo
+- Requires `DNS Zone Contributor` role or `Contributor` role on the resource group
 
 **Create Service Principal:**
 ```bash
