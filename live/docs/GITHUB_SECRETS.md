@@ -22,8 +22,9 @@ Navigate to: **Repository Settings → Secrets and variables → Actions → Env
 |------------|-------|-------------|
 | `AWS_ACCESS_KEY_ID` | `<your-access-key>` | IAM User Access Key |
 | `AWS_SECRET_ACCESS_KEY` | `<your-secret-key>` | IAM User Secret Key |
+| `AWS_REGION` | `us-east-1` | Default AWS region |
 
-**Required IAM Permissions:**
+**Required IAM Permissions (VPC Demo):**
 - `ec2:CreateVpc`, `ec2:DeleteVpc`, `ec2:DescribeVpcs`
 - `ec2:ModifyVpcAttribute`
 - `ec2:CreateTags`, `ec2:DeleteTags`, `ec2:DescribeTags`
@@ -31,6 +32,22 @@ Navigate to: **Repository Settings → Secrets and variables → Actions → Env
 - `ec2:AttachInternetGateway`, `ec2:DetachInternetGateway`
 
 Or use managed policy: `AmazonVPCFullAccess`
+
+### AWS Route53 Configuration (for DNS demo)
+
+| Secret Name | Value | Description |
+|------------|-------|-------------|
+| `ROUTE53_HOSTED_ZONE_ID` | `<hosted-zone-id>` | Route53 Hosted Zone ID (e.g., `Z1234567890ABC`) |
+
+**Note:**
+- Reuses the same AWS credentials (`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) from VPC demo
+- Zone FQDN is automatically set to `aws.gh.blox42.rocks` for Route53 provider
+
+**Required IAM Permissions (DNS Demo):**
+- `route53:ListResourceRecordSets`
+- `route53:GetHostedZone`
+
+Or use managed policy: `AmazonRoute53ReadOnlyAccess`
 
 ### Azure Configuration
 
@@ -80,9 +97,18 @@ az ad sp create-for-rbac --name "GitHub-Actions-UDDI-Demo" \
 | `GCP_CREDENTIALS` | `<service-account-json-key>` | GCP Service Account JSON Key (entire JSON) |
 | `GCP_PROJECT_ID` | `<your-gcp-project-id>` | GCP Project ID |
 
+**Note:**
+- Used for both VPC demo and Cloud DNS demo
+- Zone FQDN is automatically set to `gcp.gh.blox42.rocks` for Cloud DNS provider
+
 **Required GCP Roles:**
+
+*For VPC Demo:*
 - `Compute Network Admin` (`roles/compute.networkAdmin`)
 - `Compute Security Admin` (`roles/compute.securityAdmin`)
+
+*For DNS Demo:*
+- `DNS Reader` (`roles/dns.reader`)
 
 **Create Service Account:**
 ```bash
