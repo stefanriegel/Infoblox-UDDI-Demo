@@ -194,6 +194,12 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
           AZURE_DNS_ZONE_NAME: ${{ secrets.AZURE_DNS_ZONE_NAME }}
           AZURE_DNS_RESOURCE_GROUP: ${{ secrets.AZURE_DNS_RESOURCE_GROUP }}
+          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          AWS_REGION: ${{ secrets.AWS_REGION }}
+          ROUTE53_HOSTED_ZONE_ID: ${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
+          GOOGLE_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           set -e
           
@@ -471,6 +477,161 @@ jobs:
             echo ""
             echo "============================================"
           fi
+          
+          # Query AWS Route53 if Route53 provider selected
+          if [[ "${{ inputs.dns_provider }}" == "Route53"* ]]; then
+            echo ""
+            echo "============================================"
+            echo "☁️  AWS ROUTE53 DASHBOARD INFO"
+            echo "============================================"
+            echo ""
+            
+            # Determine Route53 zone from provider
+            ROUTE53_ZONE="${ZONE_FQDN}"
+            
+            # Check if AWS credentials are configured
+            if [ -n "${AWS_ACCESS_KEY_ID}" ] && [ -n "${ROUTE53_HOSTED_ZONE_ID}" ]; then
+              # Construct record name
+              if [ -z "${{ inputs.record_name }}" ]; then
+                RECORD_FQDN="${ROUTE53_ZONE}"
+              else
+                RECORD_FQDN="${{ inputs.record_name }}.${ROUTE53_ZONE}"
+              fi
+              
+              echo "Querying Route53 for: ${RECORD_FQDN} (${{ inputs.record_type }})"
+              echo "Hosted Zone ID: ${ROUTE53_HOSTED_ZONE_ID}"
+              echo "Region: ${AWS_REGION:-us-east-1}"
+              echo ""
+              
+              # Query Route53 for the record
+              ROUTE53_RESPONSE=$(aws route53 list-resource-record-sets \
+                --hosted-zone-id "${ROUTE53_HOSTED_ZONE_ID}" \
+                --query "ResourceRecordSets[?Name=='${RECORD_FQDN}' && Type=='${{ inputs.record_type }}']" \
+                --region "${AWS_REGION:-us-east-1}" \
+                --output json 2>/dev/null || echo '[]')
+              
+              echo "${ROUTE53_RESPONSE}" > route53-response.json
+              
+              # Check if record exists
+              RECORD_COUNT=$(echo "${ROUTE53_RESPONSE}" | jq -r 'length' 2>/dev/null || echo 0)
+              
+              if [ "${RECORD_COUNT}" -gt 0 ]; then
+                echo "✅ Record found in Route53"
+                echo ""
+                
+                # Extract record details
+                ROUTE53_NAME=$(echo "${ROUTE53_RESPONSE}" | jq -r '.[0].Name')
+                ROUTE53_TYPE=$(echo "${ROUTE53_RESPONSE}" | jq -r '.[0].Type')
+                ROUTE53_TTL=$(echo "${ROUTE53_RESPONSE}" | jq -r '.[0].TTL')
+                
+                # Extract record values based on type
+                case "${{ inputs.record_type }}" in
+                  A|AAAA)
+                    ROUTE53_VALUES=$(echo "${ROUTE53_RESPONSE}" | jq -r '.[0].ResourceRecords[].Value' | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                  CNAME)
+                    ROUTE53_VALUES=$(echo "${ROUTE53_RESPONSE}" | jq -r '.[0].ResourceRecords[0].Value')
+                    ;;
+                  TXT)
+                    ROUTE53_VALUES=$(echo "${ROUTE53_RESPONSE}" | jq -r '.[0].ResourceRecords[].Value' | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                esac
+                
+                echo "📋 Record Details:"
+                echo "   Name: ${ROUTE53_NAME}"
+                echo "   Type: ${ROUTE53_TYPE}"
+                echo "   Values: ${ROUTE53_VALUES}"
+                echo "   TTL: ${ROUTE53_TTL}"
+                echo ""
+                
+                # AWS Console link
+                echo "🔗 AWS Console:"
+                echo "   https://console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/${ROUTE53_HOSTED_ZONE_ID}"
+              else
+                echo "⚠️  Record not yet synced to Route53"
+                echo "   (UDDI sync may take a few moments)"
+              fi
+            else
+              echo "ℹ️  Route53 credentials not configured"
+              echo "   Set AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and ROUTE53_HOSTED_ZONE_ID secrets to enable dashboard info"
+            fi
+            echo ""
+            echo "============================================"
+          fi
+          
+          # Query GCP Cloud DNS if Cloud DNS provider selected
+          if [[ "${{ inputs.dns_provider }}" == "Cloud DNS"* ]]; then
+            echo ""
+            echo "============================================"
+            echo "☁️  GCP CLOUD DNS DASHBOARD INFO"
+            echo "============================================"
+            echo ""
+            
+            # Determine Cloud DNS zone from provider
+            GCP_ZONE_DNS="${ZONE_FQDN}"
+            GCP_ZONE_NAME=$(echo "${GCP_ZONE_DNS}" | sed 's/\.$//' | tr '.' '-')
+            
+            # Check if GCP credentials are configured
+            if [ -n "${GOOGLE_CREDENTIALS}" ] && [ -n "${GCP_PROJECT_ID}" ]; then
+              # Authenticate with GCP
+              echo "Authenticating with GCP..."
+              echo "${GOOGLE_CREDENTIALS}" | gcloud auth activate-service-account --key-file=- 2>/dev/null
+              gcloud config set project "${GCP_PROJECT_ID}" 2>/dev/null
+              
+              # Construct record name
+              if [ -z "${{ inputs.record_name }}" ]; then
+                RECORD_FQDN="${GCP_ZONE_DNS}"
+              else
+                RECORD_FQDN="${{ inputs.record_name }}.${GCP_ZONE_DNS}"
+              fi
+              
+              echo "Querying Cloud DNS for: ${RECORD_FQDN} (${{ inputs.record_type }})"
+              echo "Zone: ${GCP_ZONE_NAME}"
+              echo "Project: ${GCP_PROJECT_ID}"
+              echo ""
+              
+              # Query Cloud DNS for the record
+              GCP_RESPONSE=$(gcloud dns record-sets list \
+                --zone="${GCP_ZONE_NAME}" \
+                --filter="name:${RECORD_FQDN} AND type:${{ inputs.record_type }}" \
+                --format=json 2>/dev/null || echo '[]')
+              
+              echo "${GCP_RESPONSE}" > gcp-response.json
+              
+              # Check if record exists
+              RECORD_COUNT=$(echo "${GCP_RESPONSE}" | jq -r 'length' 2>/dev/null || echo 0)
+              
+              if [ "${RECORD_COUNT}" -gt 0 ]; then
+                echo "✅ Record found in Cloud DNS"
+                echo ""
+                
+                # Extract record details
+                GCP_NAME=$(echo "${GCP_RESPONSE}" | jq -r '.[0].name')
+                GCP_TYPE=$(echo "${GCP_RESPONSE}" | jq -r '.[0].type')
+                GCP_TTL=$(echo "${GCP_RESPONSE}" | jq -r '.[0].ttl')
+                GCP_VALUES=$(echo "${GCP_RESPONSE}" | jq -r '.[0].rrdatas[]' | tr '\n' ', ' | sed 's/,$//')
+                
+                echo "📋 Record Details:"
+                echo "   Name: ${GCP_NAME}"
+                echo "   Type: ${GCP_TYPE}"
+                echo "   Values: ${GCP_VALUES}"
+                echo "   TTL: ${GCP_TTL}"
+                echo ""
+                
+                # GCP Console link
+                echo "🔗 GCP Console:"
+                echo "   https://console.cloud.google.com/net-services/dns/zones/${GCP_ZONE_NAME}/rrsets?project=${GCP_PROJECT_ID}"
+              else
+                echo "⚠️  Record not yet synced to Cloud DNS"
+                echo "   (UDDI sync may take a few moments)"
+              fi
+            else
+              echo "ℹ️  Cloud DNS credentials not configured"
+              echo "   Set GOOGLE_CREDENTIALS and GCP_PROJECT_ID secrets to enable dashboard info"
+            fi
+            echo ""
+            echo "============================================"
+          fi
 
       - name: Upload artifacts (proof)
         if: always()
@@ -485,6 +646,8 @@ jobs:
             live/demos/dns/dig-full.txt
             live/demos/dns/cf-response.json
             live/demos/dns/azure-response.json
+            live/demos/dns/route53-response.json
+            live/demos/dns/gcp-response.json
             live/demos/dns/terraform.tfstate
           if-no-files-found: ignore
           retention-days: 7
@@ -496,6 +659,8 @@ jobs:
           AZURE_DNS_RESOURCE_GROUP: ${{ secrets.AZURE_DNS_RESOURCE_GROUP }}
           ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ROUTE53_HOSTED_ZONE_ID: ${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -716,6 +881,93 @@ jobs:
               fi
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
+            
+            # Route53 Dashboard Info
+            if [[ "${{ inputs.dns_provider }}" == "Route53"* ]] && [ -f "route53-response.json" ]; then
+              echo "## Downstream DNS Service: AWS Route53" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              RECORD_COUNT=$(jq -r 'length' route53-response.json 2>/dev/null || echo "0")
+              
+              if [ "${RECORD_COUNT}" -gt 0 ]; then
+                ROUTE53_NAME=$(jq -r '.[0].Name' route53-response.json)
+                ROUTE53_TYPE=$(jq -r '.[0].Type' route53-response.json)
+                ROUTE53_TTL=$(jq -r '.[0].TTL' route53-response.json)
+                
+                # Extract values based on type
+                case "${{ inputs.record_type }}" in
+                  A|AAAA)
+                    ROUTE53_VALUES=$(jq -r '.[0].ResourceRecords[].Value' route53-response.json | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                  CNAME)
+                    ROUTE53_VALUES=$(jq -r '.[0].ResourceRecords[0].Value' route53-response.json)
+                    ;;
+                  TXT)
+                    ROUTE53_VALUES=$(jq -r '.[0].ResourceRecords[].Value' route53-response.json | tr '\n' ', ' | sed 's/,$//')
+                    ;;
+                esac
+                
+                echo "> ✅ **Synchronization Complete** - Record successfully deployed to AWS Route53" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                
+                echo "### Record Details" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+                echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+                echo "| **Record Name** | \`${ROUTE53_NAME}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Record Type** | \`${ROUTE53_TYPE}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Values** | \`${ROUTE53_VALUES}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **TTL** | \`${ROUTE53_TTL}s\` |" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                
+                if [ -n "${ROUTE53_HOSTED_ZONE_ID}" ]; then
+                  echo "### 🔗 Management Links" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  echo "[🌐 View in AWS Console](https://console.aws.amazon.com/route53/v2/hostedzones#ListRecordSets/${ROUTE53_HOSTED_ZONE_ID})" >> $GITHUB_STEP_SUMMARY
+                fi
+              else
+                echo "> ⏳ Record synchronization in progress (typically completes within seconds)" >> $GITHUB_STEP_SUMMARY
+              fi
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
+            
+            # Cloud DNS Dashboard Info
+            if [[ "${{ inputs.dns_provider }}" == "Cloud DNS"* ]] && [ -f "gcp-response.json" ]; then
+              echo "## Downstream DNS Service: GCP Cloud DNS" >> $GITHUB_STEP_SUMMARY
+              echo "" >> $GITHUB_STEP_SUMMARY
+              
+              RECORD_COUNT=$(jq -r 'length' gcp-response.json 2>/dev/null || echo "0")
+              
+              if [ "${RECORD_COUNT}" -gt 0 ]; then
+                GCP_NAME=$(jq -r '.[0].name' gcp-response.json)
+                GCP_TYPE=$(jq -r '.[0].type' gcp-response.json)
+                GCP_TTL=$(jq -r '.[0].ttl' gcp-response.json)
+                GCP_VALUES=$(jq -r '.[0].rrdatas[]' gcp-response.json | tr '\n' ', ' | sed 's/,$//')
+                
+                echo "> ✅ **Synchronization Complete** - Record successfully deployed to GCP Cloud DNS" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                
+                echo "### Record Details" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+                echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+                echo "| **Record Name** | \`${GCP_NAME}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Record Type** | \`${GCP_TYPE}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **Values** | \`${GCP_VALUES}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **TTL** | \`${GCP_TTL}s\` |" >> $GITHUB_STEP_SUMMARY
+                echo "" >> $GITHUB_STEP_SUMMARY
+                
+                if [ -n "${GCP_PROJECT_ID}" ]; then
+                  echo "### 🔗 Management Links" >> $GITHUB_STEP_SUMMARY
+                  echo "" >> $GITHUB_STEP_SUMMARY
+                  GCP_ZONE_NAME=$(echo "${{ steps.set_zone.outputs.zone_fqdn }}" | sed 's/\.$//' | tr '.' '-')
+                  echo "[🌐 View in GCP Console](https://console.cloud.google.com/net-services/dns/zones/${GCP_ZONE_NAME}/rrsets?project=${GCP_PROJECT_ID})" >> $GITHUB_STEP_SUMMARY
+                fi
+              else
+                echo "> ⏳ Record synchronization in progress (typically completes within seconds)" >> $GITHUB_STEP_SUMMARY
+              fi
+              echo "" >> $GITHUB_STEP_SUMMARY
+            fi
           fi
           
           # Terraform Outputs
@@ -763,9 +1015,11 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "**Key Technical Aspects:**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Zone selection is automatic based on DNS provider (e.g., virtualife.pro for Cloudflare, az.gh.blox42.rocks for Azure)" >> $GITHUB_STEP_SUMMARY
+          echo "- Zone selection is automatic based on DNS provider (virtualife.pro for Cloudflare, az/aws/gcp.gh.blox42.rocks for others)" >> $GITHUB_STEP_SUMMARY
           echo "- Cloudflare Orange Cloud configured via UDDI API PATCH to \`provider_metadata\` after Terraform apply" >> $GITHUB_STEP_SUMMARY
-          echo "- Azure DNS queries use Azure CLI with service principal authentication" >> $GITHUB_STEP_SUMMARY
+          echo "- Provider verification uses native CLIs: Azure CLI (az), AWS CLI (aws), gcloud CLI (gcloud)" >> $GITHUB_STEP_SUMMARY
+          echo "- Route53 queries use \`aws route53 list-resource-record-sets\` with hosted zone ID" >> $GITHUB_STEP_SUMMARY
+          echo "- Cloud DNS queries use \`gcloud dns record-sets list\` with zone name derived from FQDN" >> $GITHUB_STEP_SUMMARY
           echo "- Automated cleanup workflow runs daily at 00:00 GMT+2 using tag-based resource deletion" >> $GITHUB_STEP_SUMMARY
           echo "- All credentials stored as GitHub Environment Secrets (environment: dev)" >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
