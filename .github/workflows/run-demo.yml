@@ -941,12 +941,54 @@ jobs:
       - name: Job Summary - Value Proposition
         if: always()
         run: |
-          # Terraform Outputs
-          if [ -f "tfoutputs.json" ]; then
-            echo "## Terraform Outputs" >> $GITHUB_STEP_SUMMARY
+          # UDDI API Transaction Summary
+          if [ -f "tfoutputs.json" ] && [ "${{ inputs.action }}" == "apply" ]; then
+            echo "## 🔄 UDDI API Transaction" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
+            echo "This section shows the communication between Terraform and Infoblox Universal DDI API." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Extract outputs
+            ZONE_ID=$(jq -r '.zone_id.value' tfoutputs.json)
+            ZONE_FQDN=$(jq -r '.zone_fqdn.value' tfoutputs.json)
+            RECORD_ID=$(jq -r '.record_id.value' tfoutputs.json)
+            
+            # Request Summary
+            echo "### 📤 Request to UDDI API" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Terraform sent the following DNS record configuration to Infoblox UDDI:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Parameter | Value | Description |" >> $GITHUB_STEP_SUMMARY
+            echo "|-----------|-------|-------------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Zone FQDN** | \`${ZONE_FQDN}\` | Target DNS zone in UDDI |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Record Name** | \`${{ inputs.record_name }}\` | Hostname label within zone |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Record Type** | \`${{ inputs.record_type }}\` | DNS record type |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Record Value** | \`${{ inputs.record_value }}\` | Target IP/hostname/text |" >> $GITHUB_STEP_SUMMARY
+            echo "| **TTL** | \`${{ inputs.ttl }}s\` | Time-to-live in seconds |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Tags** | \`demo=true, automation=github-actions\` | Resource labels for tracking |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Response Summary
+            echo "### 📥 Response from UDDI API" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "UDDI successfully created the DNS record and returned the following identifiers:" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "| Property | Value | Description |" >> $GITHUB_STEP_SUMMARY
+            echo "|----------|-------|-------------|" >> $GITHUB_STEP_SUMMARY
+            echo "| **Zone ID** | \`${ZONE_ID}\` | UDDI internal zone identifier |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Record ID** | \`${RECORD_ID}\` | UDDI internal record identifier |" >> $GITHUB_STEP_SUMMARY
+            echo "| **Status** | ✅ Created | Record provisioned in UDDI |" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Downstream Sync
+            echo "### ⬇️ Downstream Synchronization" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "UDDI automatically synchronized this record to the selected DNS provider (**${{ inputs.dns_provider }}**) via native integration. See provider-specific details in the sections above." >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            
+            # Raw JSON details
             echo "<details>" >> $GITHUB_STEP_SUMMARY
-            echo "<summary>View JSON</summary>" >> $GITHUB_STEP_SUMMARY
+            echo "<summary>Raw Terraform Outputs (JSON)</summary>" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
             cat tfoutputs.json >> $GITHUB_STEP_SUMMARY
