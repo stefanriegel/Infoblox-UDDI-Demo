@@ -583,15 +583,8 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
-      - name: Job Summary
+      - name: Job Summary - Header
         if: always()
-        env:
-          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
-          AZURE_DNS_RESOURCE_GROUP: ${{ secrets.AZURE_DNS_RESOURCE_GROUP }}
-          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-          ROUTE53_HOSTED_ZONE_ID: ${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -664,14 +657,19 @@ jobs:
           echo "| **Type** | \`${{ inputs.record_type }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Value** | \`${{ inputs.record_value }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **TTL** | \`${{ inputs.ttl }}s\` |" >> $GITHUB_STEP_SUMMARY
-          if [ "${{ inputs.orange_cloud }}" == "true" ]; then
-            echo "| **Cloudflare Proxy** | 🟠 **ENABLED** (Orange Cloud) |" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "| **Cloudflare Proxy** | ⚪ Disabled (DNS Only) |" >> $GITHUB_STEP_SUMMARY
-          fi
           echo "| **Executed** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          
+
+      - name: Job Summary - DNS Verification
+        if: ${{ inputs.action == 'apply' }}
+        env:
+          CF_ZONE_ID: ${{ secrets.CF_ZONE_ID }}
+          AZURE_DNS_RESOURCE_GROUP: ${{ secrets.AZURE_DNS_RESOURCE_GROUP }}
+          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          ROUTE53_HOSTED_ZONE_ID: ${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
+          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+        run: |
           # DNS Verification Section
           if [ "${{ inputs.action }}" == "apply" ]; then
             echo "## 🌐 Global DNS Verification" >> $GITHUB_STEP_SUMMARY
@@ -900,7 +898,10 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
           fi
-          
+
+      - name: Job Summary - Value Proposition
+        if: always()
+        run: |
           # Terraform Outputs
           if [ -f "tfoutputs.json" ]; then
             echo "## Terraform Outputs" >> $GITHUB_STEP_SUMMARY
@@ -947,7 +948,6 @@ jobs:
           echo "**Key Technical Aspects:**" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "- Zone selection is automatic based on DNS provider (virtualife.pro for Cloudflare, az/aws/gcp.gh.blox42.rocks for others)" >> $GITHUB_STEP_SUMMARY
-          echo "- Cloudflare Orange Cloud configured via UDDI API PATCH to \`provider_metadata\` after Terraform apply" >> $GITHUB_STEP_SUMMARY
           echo "- Provider verification uses native CLIs: Azure CLI (az), AWS CLI (aws), gcloud CLI (gcloud)" >> $GITHUB_STEP_SUMMARY
           echo "- Route53 queries use \`aws route53 list-resource-record-sets\` with hosted zone ID" >> $GITHUB_STEP_SUMMARY
           echo "- Cloud DNS queries use \`gcloud dns record-sets list\` with zone name derived from FQDN" >> $GITHUB_STEP_SUMMARY
