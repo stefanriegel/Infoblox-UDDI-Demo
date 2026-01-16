@@ -817,7 +817,8 @@ jobs:
               
               if [ -n "${RECORD_ID}" ]; then
                 AZURE_NAME=$(jq -r '.name' azure-response.json)
-                AZURE_FQDN=$(jq -r '.fqdn' azure-response.json)
+                # Construct FQDN manually to avoid GitHub secret masking
+                AZURE_FQDN="${{ inputs.record_name }}.az.gh.blox42.rocks."
                 AZURE_TTL=$(jq -r '.ttl' azure-response.json)
                 AZURE_PROVISIONING_STATE=$(jq -r '.provisioningState' azure-response.json)
                 
@@ -873,7 +874,8 @@ jobs:
               RECORD_COUNT=$(jq -r 'length' route53-response.json 2>/dev/null || echo "0")
               
               if [ "${RECORD_COUNT}" -gt 0 ]; then
-                ROUTE53_NAME=$(jq -r '.[0].Name' route53-response.json)
+                # Construct FQDN manually to avoid GitHub secret masking
+                ROUTE53_FQDN="${{ inputs.record_name }}.aws.gh.blox42.rocks."
                 ROUTE53_TYPE=$(jq -r '.[0].Type' route53-response.json)
                 ROUTE53_TTL=$(jq -r '.[0].TTL' route53-response.json)
                 
@@ -897,7 +899,7 @@ jobs:
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
                 echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-                echo "| **FQDN** | \`${ROUTE53_NAME}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **FQDN** | \`${ROUTE53_FQDN}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **Record Type** | \`${ROUTE53_TYPE}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **Target** | \`${ROUTE53_VALUES}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **TTL** | \`${ROUTE53_TTL}s\` |" >> $GITHUB_STEP_SUMMARY
@@ -922,7 +924,8 @@ jobs:
               RECORD_COUNT=$(jq -r 'length' gcp-response.json 2>/dev/null || echo "0")
               
               if [ "${RECORD_COUNT}" -gt 0 ]; then
-                GCP_NAME=$(jq -r '.[0].name' gcp-response.json)
+                # Construct FQDN manually to avoid GitHub secret masking
+                GCP_FQDN="${{ inputs.record_name }}.gcp.gh.blox42.rocks."
                 GCP_TYPE=$(jq -r '.[0].type' gcp-response.json)
                 GCP_TTL=$(jq -r '.[0].ttl' gcp-response.json)
                 GCP_VALUES=$(jq -r '.[0].rrdatas[]' gcp-response.json | tr '\n' ', ' | sed 's/,$//')
@@ -934,7 +937,7 @@ jobs:
                 echo "" >> $GITHUB_STEP_SUMMARY
                 echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
                 echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-                echo "| **FQDN** | \`${GCP_NAME}\` |" >> $GITHUB_STEP_SUMMARY
+                echo "| **FQDN** | \`${GCP_FQDN}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **Record Type** | \`${GCP_TYPE}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **Target** | \`${GCP_VALUES}\` |" >> $GITHUB_STEP_SUMMARY
                 echo "| **TTL** | \`${GCP_TTL}s\` |" >> $GITHUB_STEP_SUMMARY
