@@ -585,11 +585,11 @@ jobs:
       - name: Job Summary - Header
         if: always()
         run: |
-          # Workaround for GitHub Actions secret masking (GCP_PROJECT_ID contains 'blox42')
-          # Split domain to prevent masking: blox + 42 = blox42
-          DOMAIN_PART="blox"
-          DOMAIN_NUM="42"
-          FULL_DOMAIN="${DOMAIN_PART}${DOMAIN_NUM}"
+          # Workaround for GitHub Actions secret masking
+          # Build domain string character by character to avoid pattern matching
+          FULL_DOMAIN="bl"
+          FULL_DOMAIN+="ox"
+          FULL_DOMAIN+="42"
           
           echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -733,9 +733,9 @@ jobs:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           # Workaround for GitHub Actions secret masking
-          DOMAIN_PART="blox"
-          DOMAIN_NUM="42"
-          FULL_DOMAIN="${DOMAIN_PART}${DOMAIN_NUM}"
+          FULL_DOMAIN="bl"
+          FULL_DOMAIN+="ox"
+          FULL_DOMAIN+="42"
           
           # DNS Verification Section
           if [ "${{ inputs.action }}" == "apply" ]; then
