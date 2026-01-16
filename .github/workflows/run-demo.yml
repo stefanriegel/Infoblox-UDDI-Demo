@@ -497,7 +497,7 @@ jobs:
           ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
           ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
         run: |
-          echo "# Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
+          echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "## Executive Summary" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
@@ -530,7 +530,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Workflow diagram
-          echo "## Automation Architecture" >> $GITHUB_STEP_SUMMARY
+          echo "## 🔄 Automation Architecture" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "\`\`\`mermaid" >> $GITHUB_STEP_SUMMARY
           echo "graph TB" >> $GITHUB_STEP_SUMMARY
@@ -553,7 +553,7 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           
           # Configuration Section
-          echo "## Record Configuration" >> $GITHUB_STEP_SUMMARY
+          echo "## ⚙️ Record Configuration" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
           echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
@@ -578,7 +578,7 @@ jobs:
           
           # DNS Verification Section
           if [ "${{ inputs.action }}" == "apply" ]; then
-            echo "## Global DNS Verification" >> $GITHUB_STEP_SUMMARY
+            echo "## 🌐 Global DNS Verification" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
             echo "*Verified across multiple authoritative DNS resolvers worldwide*" >> $GITHUB_STEP_SUMMARY
             echo "" >> $GITHUB_STEP_SUMMARY
@@ -735,7 +735,7 @@ jobs:
           # Business Value Section
           echo "---" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Value Proposition" >> $GITHUB_STEP_SUMMARY
+          echo "## 💡 Value Proposition" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "### Key Benefits" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
