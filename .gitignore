@@ -18,5 +18,7 @@ override.tf.json
 # Editors
 .vscode/
 .idea/
+
+# AI Agent files
 WARP.md
-WARP.md
+AGENTS.md

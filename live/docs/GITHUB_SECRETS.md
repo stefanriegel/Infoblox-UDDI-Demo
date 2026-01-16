@@ -44,12 +44,32 @@ Or use managed policy: `AmazonVPCFullAccess`
 **Required Azure Role:**
 - `Contributor` role on the subscription or resource group
 
+### Azure DNS Configuration (for DNS demo)
+
+| Secret Name | Value | Description |
+|------------|-------|-------------|
+| `AZURE_DNS_ZONE_NAME` | `<zone-name>` | Azure DNS Zone Name (e.g., `example.com`) |
+| `AZURE_DNS_RESOURCE_GROUP` | `<resource-group>` | Resource Group containing the DNS zone |
+
+**Note:** Reuses the same Azure credentials (`ARM_*` secrets) from VPC demo. Requires `DNS Zone Contributor` role or `Contributor` role on the resource group.
+
 **Create Service Principal:**
 ```bash
 az ad sp create-for-rbac --name "GitHub-Actions-UDDI-Demo" \
   --role="Contributor" \
   --scopes="/subscriptions/<subscription-id>"
 ```
+
+### Cloudflare Configuration (for DNS demo)
+
+| Secret Name | Value | Description |
+|------------|-------|-------------|
+| `CF_API_TOKEN` | `<cloudflare-api-token>` | Cloudflare API Token |
+| `CF_ZONE_ID` | `<cloudflare-zone-id>` | Cloudflare Zone ID |
+
+**Required Cloudflare Permissions:**
+- `Zone:Read` and `DNS:Read` for DNS verification
+- Token can be created at: https://dash.cloudflare.com/profile/api-tokens
 
 ### GCP Configuration
 
