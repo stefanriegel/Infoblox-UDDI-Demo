@@ -55,7 +55,7 @@
   - Verify: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/run-demo.yml'))"` passes; `grep -c '╔══' .github/workflows/run-demo.yml` returns ≥3; `grep -c 'date +%s' .github/workflows/run-demo.yml` returns ≥1; `grep -c 'Infoblox-Universal_DDI-0066cc' .github/workflows/run-demo.yml` returns ≥1; `grep -c 'Powered by.*Infoblox Universal DDI' .github/workflows/run-demo.yml` returns ≥1
   - Done when: DNS workflow YAML is valid, narration/timing/branding/footer present, Mermaid colors standardized
 
-- [ ] **T03: Add narration and polish cleanup workflow summary** `est:1h`
+- [x] **T03: Add narration and polish cleanup workflow summary** `est:1h`
   - Why: Cleanup workflow (R011) currently has minimal summaries split across two jobs with no unified branding, Mermaid, or narration. It's the simplest workflow but still part of the demo story — "automated lifecycle management" is a selling point.
   - Files: `.github/workflows/cleanup.yml`, `.github/workflows/combined-demo.yml` (read-only reference)
   - Do: (1) Add boxed ASCII narration to discovery and deletion steps in both cleanup_dns and cleanup_vpc jobs — phase announcements for zone scanning, resource discovery, deletion. (2) Add `date +%s` timing around deletion operations. (3) Add branding header (UDDI badge + `# 🚀 Infoblox Universal DDI —` title) to both summary sections. (4) Add Mermaid `graph LR` diagram showing cleanup discovery flow: scan zones → find tagged resources → delete DNS records / delete VPCs, with appropriate colors. (5) Add value proposition footer. (6) Standardize table formatting to match other workflows. Keep the two-job summary structure (cleanup_dns and cleanup_vpc run in parallel — can't merge without restructuring).

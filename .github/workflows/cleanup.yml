@@ -59,6 +59,10 @@ jobs:
       - name: Find all demo records via API
         id: find_records
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🧹 Phase 1: Scanning DNS Zones for Demo Records            ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           echo "Querying UDDI API for all demo records (tag: demo=true)..."
           echo ""
           
@@ -165,8 +169,15 @@ jobs:
 
       - name: Delete demo records via API
         if: steps.find_records.outputs.has_records == 'true'
+        id: delete_records
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🧹 Phase 2: Deleting Tagged DNS Records                    ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           set +e  # Don't exit on error, we want to try all deletions
+          
+          DELETE_START=$(date +%s)
           
           # Support both array-only and {results:[]} JSON structures
           RECORD_IDS=$(jq -r 'if type=="object" and has("results") then .results[].id else .[].id end' /tmp/demo_records.json 2>/dev/null)
@@ -212,36 +223,91 @@ jobs:
             echo "⚠️ Some resources failed to delete"
             exit 1
           fi
+          
+          DELETE_END=$(date +%s)
+          DELETE_DURATION=$((DELETE_END - DELETE_START))
+          echo "✅ DNS record cleanup completed in ${DELETE_DURATION}s"
+          echo "delete_duration=${DELETE_DURATION}" >> $GITHUB_OUTPUT
 
       - name: Job Summary
         if: always()
         run: |
-          echo "## 🗑️ Automated Cleanup Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Strategy:** Multi-zone tag-based cleanup (finds all records with \`demo=true\` tag across all DNS zones)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Zones Scanned:**" >> $GITHUB_STEP_SUMMARY
-          echo "- \`virtualife.pro.\` (Cloudflare)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`az.gh.blox42.rocks.\` (Azure DNS)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`aws.gh.blox42.rocks.\` (Route53)" >> $GITHUB_STEP_SUMMARY
-          echo "- \`gcp.gh.blox42.rocks.\` (Cloud DNS)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Trigger** | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Demo Records Found** | ${{ steps.find_records.outputs.record_count || '0' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  📊 Generating DNS Cleanup Summary                          ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+
+          cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          ![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)
+
+          # 🚀 Infoblox Universal DDI — DNS Cleanup
+
+          ## Cleanup Architecture
+
+          ```mermaid
+          graph LR
+              A[🔷 UDDI API<br/>Zone Scan] --> B[🔍 Find Tagged<br/>Records]
+              B --> C[🟠 AWS Route53]
+              B --> D[🔵 Azure DNS]
+              B --> E[🟢 GCP Cloud DNS]
+              B --> F[☁️ Cloudflare]
+              C --> G[🗑️ Delete]
+              D --> G
+              E --> G
+              F --> G
+              style A fill:#0066cc,color:#fff
+              style B fill:#6C757D,color:#fff
+              style C fill:#FF9900,color:#fff
+              style D fill:#0078D4,color:#fff
+              style E fill:#4285F4,color:#fff
+              style F fill:#F38020,color:#fff
+              style G fill:#DC3545,color:#fff
+          ```
+          HEADER
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+          ## ⚙️ Cleanup Details
+
+          | Property | Value |
+          |----------|-------|
+          | **Trigger** | \`${{ github.event_name }}\` |
+          | **Strategy** | Multi-zone tag-based cleanup (\`demo=true\`) |
+          | **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+          | **Demo Records Found** | ${{ steps.find_records.outputs.record_count || '0' }} |
+          | **Delete Duration** | ${{ steps.delete_records.outputs.delete_duration || 'N/A' }}s |
+
+          ### Zones Scanned
+
+          | Zone | Provider |
+          |------|----------|
+          | \`virtualife.pro.\` | ☁️ Cloudflare |
+          | \`az.gh.blox42.rocks.\` | 🔵 Azure DNS |
+          | \`aws.gh.blox42.rocks.\` | 🟠 Route53 |
+          | \`gcp.gh.blox42.rocks.\` | 🟢 Cloud DNS |
+
+          EOF
+
           if [ "${{ steps.find_records.outputs.has_records }}" == "true" ]; then
             echo "> ✅ **Status**: All demo records destroyed successfully" >> $GITHUB_STEP_SUMMARY
           else
-            echo "> ℹ️ **Status**: No demo records found - nothing to cleanup" >> $GITHUB_STEP_SUMMARY
+            echo "> ℹ️ **Status**: No demo records found — nothing to cleanup" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "*Scheduled cleanup runs daily at 00:00 GMT+2 (22:00 UTC)*" >> $GITHUB_STEP_SUMMARY
+
+          cat >> $GITHUB_STEP_SUMMARY << 'FOOTER'
+
+          ---
+
+          ## 💡 Value Proposition
+
+          - **Centralized DNS Management** — Single API to manage records across Cloudflare, Route53, Azure DNS, and Cloud DNS
+          - **Tag-Based Lifecycle** — Demo resources are automatically discovered and cleaned up via UDDI tags
+          - **Zero Orphans** — Scheduled cleanup ensures no demo resources persist beyond their lifecycle
+          - **Full Auditability** — Every creation and deletion tracked through UDDI audit trail
+
+          ---
+
+          **Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/universal-ddi/)** | Terraform UDDI Provider | GitHub Actions
+          FOOTER
 
   cleanup_vpc:
     name: "Cleanup VPC/VNet resources"
@@ -267,6 +333,10 @@ jobs:
       - name: Find demo subnets in UDDI IPAM
         id: find_subnets
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🧹 Phase 1: Scanning UDDI IPAM for Demo Subnets            ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           echo "Querying UDDI IPAM for demo subnets (tag: demo=true)..."
           
           # Query all subnets
@@ -303,6 +373,10 @@ jobs:
         run: |
           set +e
           
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🧹 Phase 2: Cleaning Up AWS VPCs                           ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           echo "🔍 Finding AWS VPCs with Demo=true tag..."
           
           # Get all regions to search (search common regions)
@@ -371,6 +445,10 @@ jobs:
         run: |
           set +e
           
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🧹 Phase 3: Cleaning Up Azure VNets                        ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           echo "🔍 Finding Azure Resource Groups with demo=true tag..."
           
           # Login to Azure
@@ -406,6 +484,10 @@ jobs:
         run: |
           set +e
           
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🧹 Phase 4: Cleaning Up GCP VPCs                           ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           echo "🔍 Finding GCP VPCs with description containing 'UDDI'..."
           
           # Authenticate with GCP
@@ -450,8 +532,15 @@ jobs:
 
       - name: Delete demo subnets from UDDI
         if: steps.find_subnets.outputs.has_subnets == 'true'
+        id: delete_subnets
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🧹 Phase 5: Deleting UDDI IPAM Subnets                     ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           set +e
+          
+          DELETE_START=$(date +%s)
           
           SUBNET_IDS=$(jq -r '.results[].id' /tmp/demo_subnets.json 2>/dev/null)
           
@@ -483,27 +572,82 @@ jobs:
           done
           
           echo "Summary: ${DELETED} deleted, ${FAILED} failed"
+          
+          DELETE_END=$(date +%s)
+          DELETE_DURATION=$((DELETE_END - DELETE_START))
+          echo "✅ VPC/IPAM cleanup completed in ${DELETE_DURATION}s"
+          echo "delete_duration=${DELETE_DURATION}" >> $GITHUB_OUTPUT
 
       - name: VPC Cleanup Summary
         if: always()
         run: |
-          echo "## 🗑️ VPC/VNet Cleanup Report" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Strategy:** Tag-based cleanup (demo=true + cloud provider tags)" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Trigger** | \`${{ github.event_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Demo Subnets Found** | ${{ steps.find_subnets.outputs.subnet_count || '0' }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  📊 Generating VPC Cleanup Summary                          ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+
+          cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          ![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)
+
+          # 🚀 Infoblox Universal DDI — VPC Cleanup
+
+          ## Cleanup Architecture
+
+          ```mermaid
+          graph LR
+              A[🔷 UDDI IPAM<br/>Subnet Scan] --> B[🟠 AWS VPCs<br/>Delete]
+              A --> C[🔵 Azure VNets<br/>Delete]
+              A --> D[🟢 GCP VPCs<br/>Delete]
+              B --> E[🗑️ UDDI Subnets<br/>Release]
+              C --> E
+              D --> E
+              style A fill:#0066cc,color:#fff
+              style B fill:#FF9900,color:#fff
+              style C fill:#0078D4,color:#fff
+              style D fill:#4285F4,color:#fff
+              style E fill:#DC3545,color:#fff
+          ```
+          HEADER
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+          ## ⚙️ Cleanup Details
+
+          | Property | Value |
+          |----------|-------|
+          | **Trigger** | \`${{ github.event_name }}\` |
+          | **Strategy** | Tag-based cleanup (\`demo=true\` + cloud provider tags) |
+          | **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+          | **Demo Subnets Found** | ${{ steps.find_subnets.outputs.subnet_count || '0' }} |
+          | **Delete Duration** | ${{ steps.delete_subnets.outputs.delete_duration || 'N/A' }}s |
+
+          ### Clouds Scanned
+
+          | Cloud | Method |
+          |-------|--------|
+          | 🟠 AWS | VPC tag filter (\`Demo=true\`, \`ManagedBy=terraform\`) |
+          | 🔵 Azure | Resource Group tag filter (\`demo=true\`) |
+          | 🟢 GCP | VPC description filter (\`UDDI\`) |
+
+          EOF
+
           if [ "${{ steps.find_subnets.outputs.has_subnets }}" == "true" ]; then
             echo "> ✅ **Status**: All demo VPC/VNet resources destroyed" >> $GITHUB_STEP_SUMMARY
           else
-            echo "> ℹ️ **Status**: No demo VPC/VNet resources found" >> $GITHUB_STEP_SUMMARY
+            echo "> ℹ️ **Status**: No demo VPC/VNet resources found — nothing to cleanup" >> $GITHUB_STEP_SUMMARY
           fi
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "*Scheduled cleanup runs daily at 00:00 GMT+2 (22:00 UTC)*" >> $GITHUB_STEP_SUMMARY
+
+          cat >> $GITHUB_STEP_SUMMARY << 'FOOTER'
+
+          ---
+
+          ## 💡 Value Proposition
+
+          - **Unified IPAM Lifecycle** — UDDI manages allocation and deallocation across all clouds
+          - **Tag-Based Discovery** — Demo resources automatically found via consistent tagging strategy
+          - **Multi-Cloud Cleanup** — AWS, Azure, and GCP resources cleaned in parallel
+          - **Full Auditability** — Every allocation and release tracked through UDDI audit trail
+
+          ---
+
+          **Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/universal-ddi/)** | Terraform UDDI Provider | GitHub Actions
+          FOOTER

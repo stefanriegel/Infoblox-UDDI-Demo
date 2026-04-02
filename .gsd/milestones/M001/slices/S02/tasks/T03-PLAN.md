@@ -67,3 +67,10 @@ Use `.github/workflows/combined-demo.yml` as the **read-only reference** for pat
 ## Expected Output
 
 - `.github/workflows/cleanup.yml` — polished with narration, timing, branding, Mermaid diagrams, and footer in both job summaries
+
+## Observability Impact
+
+- **Log narration:** Trigger cleanup workflow via `workflow_dispatch` (input: "destroy") → check Actions logs for `╔══` boxed banners at each phase in both `cleanup_dns` and `cleanup_vpc` jobs.
+- **Timing metrics:** Look for `✅ DNS record cleanup completed in Xs` and `✅ VPC/IPAM cleanup completed in Xs` in respective job logs. Delete duration also appears in the summary table.
+- **Summary rendering:** After a run, check the Actions summary tab for UDDI badge, Mermaid diagram, cleanup details table, zones/clouds scanned tables, and "Powered by Infoblox Universal DDI" footer in both job summaries.
+- **Failure visibility:** Both summaries run with `if: always()`, so they render even when deletion steps fail. Delete duration shows "N/A" when the deletion step was skipped (no records/subnets found).
