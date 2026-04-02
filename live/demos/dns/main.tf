@@ -28,12 +28,16 @@ resource "bloxone_dns_a_record" "a_record" {
   comment      = "Terraform-managed A record"
 
   tags = {
-    "demo" = "true"
+    "demo"       = "true"
     "automation" = "github-actions"
   }
 
   rdata = {
     address = var.record_value
+  }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
   }
 }
 
@@ -46,12 +50,16 @@ resource "bloxone_dns_aaaa_record" "aaaa_record" {
   comment      = "Terraform-managed AAAA record"
 
   tags = {
-    "demo" = "true"
+    "demo"       = "true"
     "automation" = "github-actions"
   }
 
   rdata = {
     address = var.record_value
+  }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
   }
 }
 
@@ -64,12 +72,16 @@ resource "bloxone_dns_txt_record" "txt_record" {
   comment      = "Terraform-managed TXT record"
 
   tags = {
-    "demo" = "true"
+    "demo"       = "true"
     "automation" = "github-actions"
   }
 
   rdata = {
     text = var.record_value
+  }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
   }
 }
 
@@ -82,12 +94,16 @@ resource "bloxone_dns_cname_record" "cname_record" {
   comment      = "Terraform-managed CNAME record"
 
   tags = {
-    "demo" = "true"
+    "demo"       = "true"
     "automation" = "github-actions"
   }
 
   rdata = {
     cname = var.record_value
+  }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
   }
 }
 

@@ -9,6 +9,10 @@ resource "bloxone_dns_a_record" "a_record" {
   rdata = {
     address = var.record_value
   }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
+  }
 }
 
 # AAAA Record
@@ -22,6 +26,10 @@ resource "bloxone_dns_aaaa_record" "aaaa_record" {
   rdata = {
     address = var.record_value
   }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
+  }
 }
 
 # TXT Record
@@ -34,5 +42,9 @@ resource "bloxone_dns_txt_record" "txt_record" {
 
   rdata = {
     text = var.record_value
+  }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
   }
 }

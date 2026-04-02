@@ -7,4 +7,8 @@ resource "bloxone_dns_cname_record" "this" {
   rdata = {
     cname = var.cname_target
   }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
+  }
 }

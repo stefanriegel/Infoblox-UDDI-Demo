@@ -103,6 +103,10 @@ resource "bloxone_dns_a_record" "vpc_entry" {
   rdata = {
     address = cidrhost(aws_vpc.main.cidr_block, 1)
   }
+
+  lifecycle {
+    ignore_changes = [provider_metadata]
+  }
 }
 
 # =============================================================================
