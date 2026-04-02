@@ -94,6 +94,10 @@ jobs:
       - name: Validate cloud selection
         id: check
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Preflight: Validating Cloud Selection & IPAM Config     ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           DEPLOY_COUNT=0
           CLOUDS=""
           TOTAL_NETWORKS=0
@@ -172,14 +176,18 @@ jobs:
         working-directory: live/demos/vpc-aws
         run: |
           VPC_COUNT=${{ inputs.vpc_count }}
-          echo "🚀 Deploying ${VPC_COUNT} AWS VPC(s)..."
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🟠 AWS: Deploying ${VPC_COUNT} VPC(s) via UDDI IPAM        ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
           echo ""
+          
+          APPLY_START=$(date +%s)
           
           for i in $(seq 1 ${VPC_COUNT}); do
             VPC_NAME="${{ inputs.network_name }}-aws-${i}"
-            echo "=========================================="
-            echo "VPC ${i}/${VPC_COUNT}: ${VPC_NAME}"
-            echo "=========================================="
+            echo "╔══════════════════════════════════════════════════════════════╗"
+            echo "║  🟠 Phase ${i}/${VPC_COUNT}: ${VPC_NAME}"
+            echo "╚══════════════════════════════════════════════════════════════╝"
             
             terraform init -input=false -no-color -reconfigure
             
@@ -211,6 +219,11 @@ jobs:
             
             echo ""
           done
+          
+          APPLY_END=$(date +%s)
+          APPLY_DURATION=$((APPLY_END - APPLY_START))
+          echo "aws_duration=${APPLY_DURATION}" >> $GITHUB_OUTPUT
+          echo "✅ AWS deployment completed in ${APPLY_DURATION}s"
 
       - name: Save Terraform state cache
         if: ${{ inputs.action == 'apply' }}
@@ -314,14 +327,18 @@ jobs:
         working-directory: live/demos/vpc-azure
         run: |
           VNET_COUNT=${{ inputs.vpc_count }}
-          echo "🚀 Deploying ${VNET_COUNT} Azure VNet(s)..."
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔵 Azure: Deploying ${VNET_COUNT} VNet(s) via UDDI IPAM    ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
           echo ""
+          
+          APPLY_START=$(date +%s)
           
           for i in $(seq 1 ${VNET_COUNT}); do
             VNET_NAME="${{ inputs.network_name }}-azure-${i}"
-            echo "=========================================="
-            echo "VNet ${i}/${VNET_COUNT}: ${VNET_NAME}"
-            echo "=========================================="
+            echo "╔══════════════════════════════════════════════════════════════╗"
+            echo "║  🔵 Phase ${i}/${VNET_COUNT}: ${VNET_NAME}"
+            echo "╚══════════════════════════════════════════════════════════════╝"
             
             terraform init -input=false -no-color -reconfigure
             
@@ -353,6 +370,11 @@ jobs:
             
             echo ""
           done
+          
+          APPLY_END=$(date +%s)
+          APPLY_DURATION=$((APPLY_END - APPLY_START))
+          echo "azure_duration=${APPLY_DURATION}" >> $GITHUB_OUTPUT
+          echo "✅ Azure deployment completed in ${APPLY_DURATION}s"
 
       - name: Save Terraform state cache
         if: ${{ inputs.action == 'apply' }}
@@ -462,14 +484,18 @@ jobs:
         working-directory: live/demos/vpc-gcp
         run: |
           VPC_COUNT=${{ inputs.vpc_count }}
-          echo "🚀 Deploying ${VPC_COUNT} GCP VPC(s)..."
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🟢 GCP: Deploying ${VPC_COUNT} VPC(s) via UDDI IPAM        ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
           echo ""
+          
+          APPLY_START=$(date +%s)
           
           for i in $(seq 1 ${VPC_COUNT}); do
             VPC_NAME="${{ inputs.network_name }}-gcp-${i}"
-            echo "=========================================="
-            echo "VPC ${i}/${VPC_COUNT}: ${VPC_NAME}"
-            echo "=========================================="
+            echo "╔══════════════════════════════════════════════════════════════╗"
+            echo "║  🟢 Phase ${i}/${VPC_COUNT}: ${VPC_NAME}"
+            echo "╚══════════════════════════════════════════════════════════════╝"
             
             terraform init -input=false -no-color -reconfigure
             
@@ -502,6 +528,11 @@ jobs:
             
             echo ""
           done
+          
+          APPLY_END=$(date +%s)
+          APPLY_DURATION=$((APPLY_END - APPLY_START))
+          echo "gcp_duration=${APPLY_DURATION}" >> $GITHUB_OUTPUT
+          echo "✅ GCP deployment completed in ${APPLY_DURATION}s"
 
       - name: Save Terraform state cache
         if: ${{ inputs.action == 'apply' }}
@@ -571,63 +602,116 @@ jobs:
     steps:
       - name: Generate Summary
         run: |
-          echo "# Multi-Cloud VPC/VNet Provisioning" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Powered by Infoblox Universal DDI**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          echo "## Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Parameter | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-----------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Action** | \`${{ inputs.action }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Network Name** | \`${{ inputs.network_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Subnet Size** | \`/${{ inputs.subnet_size }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Total Networks** | ${{ needs.preflight.outputs.total_networks }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  📊 Generating VPC Deployment Summary                       ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+
+          cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          ![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)
+
+          # 🚀 Infoblox Universal DDI — VPC Deployment Demo
+
+          ## Automation Architecture
+
+          ```mermaid
+          graph LR
+              A[🔷 UDDI IPAM<br/>Subnet Allocation] --> B[🟠 AWS VPCs<br/>VPC + Subnets]
+              A --> C[🔵 Azure VNets<br/>VNet + Subnets]
+              A --> D[🟢 GCP VPCs<br/>VPC + Subnets]
+              B --> E[✅ Verified]
+              C --> F[✅ Verified]
+              D --> G[✅ Verified]
+              style A fill:#0066cc,color:#fff
+              style B fill:#FF9900,color:#fff
+              style C fill:#0078D4,color:#fff
+              style D fill:#4285F4,color:#fff
+              style E fill:#00C853,color:#fff
+              style F fill:#00C853,color:#fff
+              style G fill:#00C853,color:#fff
+          ```
+          HEADER
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+          ## ⚙️ Configuration
+
+          | Parameter | Value |
+          |-----------|-------|
+          | **Action** | \`${{ inputs.action }}\` |
+          | **Network Name** | \`${{ inputs.network_name }}\` |
+          | **Subnet Size** | \`/${{ inputs.subnet_size }}\` |
+          | **VPCs per Cloud** | \`${{ inputs.vpc_count }}\` |
+          | **Total Networks** | ${{ needs.preflight.outputs.total_networks }} |
+          | **Clouds** | ${{ needs.preflight.outputs.clouds }} |
+          | **Executed** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+
+          EOF
+
           if [ "${{ inputs.action }}" == "apply" ]; then
-            echo "## Deployed Resources" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            
+            cat >> $GITHUB_STEP_SUMMARY << 'SECTION'
+
+          ## 📊 Deployed Resources
+
+          SECTION
+
             # AWS VPCs
             if [ "${{ inputs.deploy_aws }}" == "true" ] && [ "${{ needs.aws_vpcs.result }}" == "success" ]; then
-              echo "### AWS VPCs (${{ inputs.aws_region }})" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "| Name | VPC ID | CIDR (UDDI Allocated) | Status |" >> $GITHUB_STEP_SUMMARY
-              echo "|------|--------|----------------------|--------|" >> $GITHUB_STEP_SUMMARY
-              
-              echo '${AWS_VERIFICATION}' | jq -r '.vpcs[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
+              cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### 🟠 AWS VPCs (${{ inputs.aws_region }})
+
+          | Name | VPC ID | CIDR (UDDI Allocated) | Status |
+          |------|--------|----------------------|--------|
+          EOF
+              echo "${AWS_VERIFICATION}" | jq -r '.vpcs[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
-            
+
             # Azure VNets
             if [ "${{ inputs.deploy_azure }}" == "true" ] && [ "${{ needs.azure_vnets.result }}" == "success" ]; then
-              echo "### Azure VNets (${{ inputs.azure_location }})" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "| Name | VNet ID | CIDR (UDDI Allocated) | Status |" >> $GITHUB_STEP_SUMMARY
-              echo "|------|---------|----------------------|--------|" >> $GITHUB_STEP_SUMMARY
-              
-              echo '${AZURE_VERIFICATION}' | jq -r '.vnets[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
+              cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### 🔵 Azure VNets (${{ inputs.azure_location }})
+
+          | Name | VNet ID | CIDR (UDDI Allocated) | Status |
+          |------|---------|----------------------|--------|
+          EOF
+              echo "${AZURE_VERIFICATION}" | jq -r '.vnets[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
-            
+
             # GCP VPCs
             if [ "${{ inputs.deploy_gcp }}" == "true" ] && [ "${{ needs.gcp_vpcs.result }}" == "success" ]; then
-              echo "### GCP VPCs (${{ inputs.gcp_region }})" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo "| Name | VPC ID | CIDR (UDDI Allocated) | Status |" >> $GITHUB_STEP_SUMMARY
-              echo "|------|--------|----------------------|--------|" >> $GITHUB_STEP_SUMMARY
-              
-              echo '${GCP_VERIFICATION}' | jq -r '.vpcs[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
+              cat >> $GITHUB_STEP_SUMMARY << EOF
+          ### 🟢 GCP VPCs (${{ inputs.gcp_region }})
+
+          | Name | VPC ID | CIDR (UDDI Allocated) | Status |
+          |------|--------|----------------------|--------|
+          EOF
+              echo "${GCP_VERIFICATION}" | jq -r '.vpcs[]? | "| \(.name) | `\(.id)` | `\(.cidr)` | \(.state) |"' >> $GITHUB_STEP_SUMMARY 2>/dev/null || echo "| - | - | - | No data |" >> $GITHUB_STEP_SUMMARY
               echo "" >> $GITHUB_STEP_SUMMARY
             fi
-            
-            echo "---" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "**UDDI as Single Source of Truth:** All subnets allocated from centralized IPAM blocks" >> $GITHUB_STEP_SUMMARY
+
           elif [ "${{ inputs.action }}" == "destroy" ]; then
-            echo "## Resources Destroyed" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "> Use Auto Cleanup workflow for resource deletion" >> $GITHUB_STEP_SUMMARY
+            cat >> $GITHUB_STEP_SUMMARY << 'DESTROY'
+
+          ## 🗑️ Resources Destroyed
+
+          > Use Auto Cleanup workflow for resource deletion
+
+          DESTROY
           fi
+
+          cat >> $GITHUB_STEP_SUMMARY << 'FOOTER'
+
+          ---
+
+          ## 💡 Value Proposition
+
+          - **Unified IPAM** — Single source of truth for IP allocation across AWS, Azure, and GCP
+          - **Zero-Touch Automation** — UDDI allocates subnets → clouds provision VPCs/VNets automatically
+          - **No Overlap, No Conflict** — Centralized IPAM prevents CIDR collisions across multi-cloud
+          - **Full Auditability** — Terraform state + UDDI audit trail + cloud-native verification
+
+          ---
+
+          **Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/universal-ddi/)** | Terraform UDDI Provider | GitHub Actions
+          FOOTER

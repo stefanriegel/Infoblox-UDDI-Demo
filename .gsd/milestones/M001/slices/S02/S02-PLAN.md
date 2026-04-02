@@ -29,10 +29,19 @@
 - All four workflows share branding badge: `grep -l 'Infoblox-Universal_DDI-0066cc' .github/workflows/*.yml | wc -l` returns 4
 - All four workflows share footer: `grep -l 'Powered by.*Infoblox Universal DDI' .github/workflows/*.yml | wc -l` returns 4
 - VPC and cleanup workflows contain Mermaid diagrams: `for f in vpc-deployment.yml cleanup.yml; do grep -l '```mermaid' .github/workflows/$f; done` returns both
+- Failure path: VPC summary job renders "No data" fallback for skipped/failed clouds: `grep -c 'No data' .github/workflows/vpc-deployment.yml` returns ≥1
+
+## Observability / Diagnostics
+
+- **Runtime signals:** Boxed ASCII narration in GitHub Actions logs provides phase-by-phase progress visibility. Timing metrics (`date +%s`) emit duration in seconds per terraform apply. Summary job renders structured Markdown tables in `$GITHUB_STEP_SUMMARY`.
+- **Inspection surfaces:** Job summaries viewable in GitHub Actions run UI. Mermaid diagrams render inline. Verification tables show per-cloud resource state (VPC ID, CIDR, provisioning state).
+- **Failure visibility:** If a cloud deploy job fails, the summary job still runs (`if: always()`) and renders partial results — failed clouds show as skipped sections. The `echo '${VAR}'` → `echo "${VAR}"` bug fix ensures verification data actually reaches the summary instead of silently rendering empty.
+- **Failure-path verification:** `grep -c "echo '\${" .github/workflows/vpc-deployment.yml` returns 0 confirms no single-quoted expansion bugs remain. YAML validation catches syntax errors before runtime. Missing verification data falls through to `|| echo "| - | - | - | No data |"` fallback rows.
+- **Redaction:** No secrets in summaries — cloud credentials stay in env vars, only resource IDs/CIDRs/states rendered.
 
 ## Tasks
 
-- [ ] **T01: Fix VPC bug, add narration and polish VPC workflow summary** `est:1h30m`
+- [x] **T01: Fix VPC bug, add narration and polish VPC workflow summary** `est:1h30m`
   - Why: VPC workflow has a confirmed env var expansion bug (single-quoted `echo '${VAR}'` prevents bash expansion in summary job) plus missing narration, Mermaid diagram, branding, and timing. Highest-risk item — bug fix is correctness, not just cosmetic.
   - Files: `.github/workflows/vpc-deployment.yml`, `.github/workflows/combined-demo.yml` (read-only reference)
   - Do: (1) Fix lines 600/611/622 — change `echo '${VAR}'` to `echo "${VAR}"` for AWS/Azure/GCP verification jq commands. (2) Add boxed ASCII narration to preflight, aws_vpcs, azure_vnets, gcp_vpcs job steps — phase announcements before terraform init/plan/apply. (3) Add `date +%s` timing around terraform apply steps. (4) Rewrite summary job to use heredoc style with: branding badge header, Mermaid `graph LR` showing IPAM→multi-cloud VPC flow (UDDI fill:#0066cc, AWS fill:#FF9900, Azure fill:#0078D4, GCP fill:#4285F4), config table, per-cloud verification tables (now working), timing metrics, value proposition footer. Keep summary self-contained — no extracted scripts.

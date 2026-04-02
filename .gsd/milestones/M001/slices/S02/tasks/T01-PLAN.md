@@ -64,6 +64,12 @@ Use `.github/workflows/combined-demo.yml` as the **read-only reference** for all
 - `grep '```mermaid' .github/workflows/vpc-deployment.yml` returns a match
 - `grep 'Powered by.*Infoblox Universal DDI' .github/workflows/vpc-deployment.yml` returns a match
 
+## Observability Impact
+
+- **New signals:** Boxed ASCII narration emits phase markers (🔷/🟠/🔵/🟢) in GitHub Actions logs for each terraform operation. `date +%s` timing around apply steps emits `apply_duration` via `$GITHUB_OUTPUT`.
+- **Inspection:** Summary job renders Mermaid architecture diagram, per-cloud verification tables with resource IDs/CIDRs/states, and a config table — all visible in the GitHub Actions summary tab.
+- **Failure visibility:** Bug fix ensures `echo "${VAR}"` expands env vars so verification tables show real data instead of empty rows. Fallback `|| echo "| - | - | - | No data |"` renders for skipped/failed clouds. Summary job runs with `if: always()` so partial failures still produce output.
+
 ## Inputs
 
 - `.github/workflows/vpc-deployment.yml` — the target file to modify
