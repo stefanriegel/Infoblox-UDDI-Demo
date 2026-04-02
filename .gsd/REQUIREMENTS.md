@@ -12,7 +12,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M001/S01
 - Supporting slices: M001/S03
-- Validation: Static verification complete (Terraform validates, YAML parses, cross-references correct). Live run required for full validation.
+- Validation: Static verification complete (Terraform validates, YAML parses, tags match cleanup filters, badge present, cross-suite script passes). Live run required for full validation.
 - Notes: Should support at least one cloud provider (AWS preferred as primary). DNS model is UDDI-native sync only.
 
 ### R002 — Step-by-step narrated workflow output
@@ -39,13 +39,13 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R004 — Consistent branding across all workflows
 - Class: quality-attribute
-- Status: active
+- Status: validated
 - Description: All workflow summaries share consistent Infoblox/UDDI branding, color scheme, badge style, section headers, and Mermaid diagram aesthetics.
 - Why it matters: Inconsistent presentation undermines the "production-grade" message. A customer seeing different styles across demos questions the maturity.
 - Source: user
 - Primary owning slice: M001/S02
 - Supporting slices: none
-- Validation: unmapped
+- Validation: All 4 workflows contain UDDI badge (grep count 4/4). Verified by scripts/verify-s03.sh.
 - Notes: Current DNS demo has more polish than VPC demo. Need to harmonize.
 
 ### R005 — Production-grade feel
@@ -56,7 +56,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M001/S03
 - Supporting slices: M001/S01, M001/S02
-- Validation: unmapped
+- Validation: Cleanup discovers combined demo resources via uppercase Demo/ManagedBy tags. Cross-suite verification script ensures consistency. Static verification complete; live UAT pending.
 - Notes: Encompasses error handling, cleanup, verification depth, and overall operational maturity.
 
 ### R006 — DNS demo presentation polish
@@ -105,13 +105,13 @@ This file is the explicit capability and coverage contract for the project.
 
 ### R010 — SE-friendly workflow inputs
 - Class: launchability
-- Status: active
+- Status: validated
 - Description: All workflow_dispatch inputs have clear descriptions, sensible defaults, and are ordered logically so an SE can trigger a demo quickly and confidently.
 - Why it matters: An SE in front of a customer can't fumble with confusing input fields. Speed and confidence matter.
 - Source: inferred
 - Primary owning slice: M001/S03
 - Supporting slices: none
-- Validation: unmapped
+- Validation: All 4 workflows have expanded input descriptions with examples, deploy_aws defaults to true, CIDR explanations added. Verified by scripts/verify-s03.sh.
 - Notes: Current inputs are functional but could be clearer (e.g., DNS value field description).
 
 ### R011 — Cleanup workflow presentation polish
@@ -155,7 +155,7 @@ This file is the explicit capability and coverage contract for the project.
 | R007 | primary-user-loop | active | M001/S02 | none | unmapped |
 | R008 | differentiator | active | M001/S02 | M001/S01 | unmapped |
 | R009 | quality-attribute | active | M001/S02 | none | unmapped |
-| R010 | launchability | active | M001/S03 | none | unmapped |
+| R010 | launchability | validated | M001/S03 | none | verify-s03.sh assertions |
 | R011 | operability | active | M001/S02 | none | unmapped |
 | R012 | operability | deferred | none | none | unmapped |
 
