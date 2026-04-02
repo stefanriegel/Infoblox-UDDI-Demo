@@ -47,7 +47,7 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [ ] **S01: Combined IPAM+DNS Workflow** `risk:high` `depends:[]`
+- [x] **S01: Combined IPAM+DNS Workflow** `risk:high` `depends:[]`
   > After this: SE triggers one workflow that allocates a subnet from UDDI IPAM, provisions a VPC on AWS, creates a DNS A record in UDDI pointing to the VPC's CIDR, and verifies the DNS record synced to the cloud DNS provider — all proven with real cloud resources.
 
 - [ ] **S02: Narrated Demo Output & Presentation Polish** `risk:medium` `depends:[]`

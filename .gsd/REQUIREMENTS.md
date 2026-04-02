@@ -12,7 +12,7 @@ This file is the explicit capability and coverage contract for the project.
 - Source: user
 - Primary owning slice: M001/S01
 - Supporting slices: M001/S03
-- Validation: unmapped
+- Validation: Static verification complete (Terraform validates, YAML parses, cross-references correct). Live run required for full validation.
 - Notes: Should support at least one cloud provider (AWS preferred as primary). DNS model is UDDI-native sync only.
 
 ### R002 — Step-by-step narrated workflow output
@@ -146,7 +146,7 @@ This file is the explicit capability and coverage contract for the project.
 
 | ID | Class | Status | Primary owner | Supporting | Proof |
 |---|---|---|---|---|---|
-| R001 | core-capability | active | M001/S01 | M001/S03 | unmapped |
+| R001 | core-capability | active | M001/S01 | M001/S03 | static-verified |
 | R002 | differentiator | active | M001/S02 | M001/S01 | unmapped |
 | R003 | differentiator | active | M001/S02 | none | unmapped |
 | R004 | quality-attribute | active | M001/S02 | none | unmapped |

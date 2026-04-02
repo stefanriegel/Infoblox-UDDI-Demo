@@ -10,12 +10,13 @@ UDDI as the centralized control plane — one place to manage DNS and IP address
 
 ## Current State
 
-Three working workflows exist:
+Four workflows exist:
 - **DNS Demo** (`run-demo.yml`) — Creates DNS records in UDDI, verifies sync to Cloudflare/Azure DNS/Route53/Cloud DNS
 - **VPC Demo** (`vpc-deployment.yml`) — Allocates subnets from UDDI IPAM, provisions real VPCs/VNets on AWS/Azure/GCP
+- **Combined Demo** (`combined-demo.yml`) — **NEW** — Chains IPAM allocation → VPC provisioning → DNS A record creation with narrated phases, DNS verification, and Mermaid job summary
 - **Cleanup** (`cleanup.yml`) — Tag-based daily cleanup across all providers
 
-Functional but not optimized for customer-facing demo use. Job summaries, narration, and the range of scenarios need enhancement.
+S01 complete: combined workflow built and statically verified. Presentation polish (S02) and SE experience (S03) remain.
 
 ## Architecture / Key Patterns
 
