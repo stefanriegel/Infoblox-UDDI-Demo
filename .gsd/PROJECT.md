@@ -25,7 +25,7 @@ All workflows share consistent Infoblox UDDI branding (badge, title prefix, Merm
 - **GitHub Actions `workflow_dispatch`** for SE-triggered demos
 - **UDDI-native sync** for DNS — records created in UDDI, verified on cloud providers (no dual-write)
 - **UDDI IPAM next-available** for subnet allocation — conflict-free, centralized
-- **Tag-based cleanup** (`demo=true`) for resource lifecycle
+- **Tag-based cleanup** (`Demo=true`, `ManagedBy=terraform`) for resource lifecycle
 - Zones: `virtualife.pro` (Cloudflare), `az/aws/gcp.gh.blox42.rocks` (Azure/Route53/Cloud DNS)
 - IPAM blocks: AWS `10.42.0.0/16`, Azure `10.44.0.0/16`, GCP `10.43.0.0/16`
 
@@ -40,4 +40,4 @@ See `.gsd/REQUIREMENTS.md` for the explicit capability contract, requirement sta
 
 ## Milestone Sequence
 
-- [x] M001: Customer Demo Enhancement — Combined IPAM+DNS workflow, professional narrated output, consistent branding, SE-friendly inputs across all 4 workflows. Static verification complete; live UAT pending.
+- [x] M001: Customer Demo Enhancement — Combined IPAM+DNS workflow, professional narrated output, consistent branding, SE-friendly inputs across all 4 workflows. Static verification complete (15/15 checks); live UAT pending. 2 requirements validated (R004 branding, R010 SE inputs).

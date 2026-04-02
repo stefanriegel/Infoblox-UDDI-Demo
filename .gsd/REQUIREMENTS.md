@@ -149,7 +149,7 @@ This file is the explicit capability and coverage contract for the project.
 | R001 | core-capability | active | M001/S01 | M001/S03 | static-verified |
 | R002 | differentiator | active | M001/S02 | M001/S01 | unmapped |
 | R003 | differentiator | active | M001/S02 | none | unmapped |
-| R004 | quality-attribute | active | M001/S02 | none | unmapped |
+| R004 | quality-attribute | validated | M001/S02 | none | 4/4 badge coverage, verify-s03.sh |
 | R005 | quality-attribute | active | M001/S03 | M001/S01, M001/S02 | unmapped |
 | R006 | primary-user-loop | active | M001/S02 | none | unmapped |
 | R007 | primary-user-loop | active | M001/S02 | none | unmapped |
@@ -161,7 +161,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Coverage Summary
 
-- Active requirements: 11
-- Mapped to slices: 11
-- Validated: 0
+- Active requirements: 9
+- Mapped to slices: 9
+- Validated: 2
 - Unmapped active requirements: 0
