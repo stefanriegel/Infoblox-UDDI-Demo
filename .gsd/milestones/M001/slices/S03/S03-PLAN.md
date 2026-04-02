@@ -48,7 +48,7 @@
   - Verify: `grep -c 'ManagedBy' live/demos/combined/main.tf` returns ≥2; `grep -c 'Infoblox-Universal_DDI-0066cc' .github/workflows/combined-demo.yml` returns ≥1; `terraform validate` passes; YAML parses.
   - Done when: Cleanup filter will match combined demo VPCs, and badge count across all 4 workflows is ≥4.
 
-- [ ] **T02: Polish workflow inputs for SE experience and add cross-suite verification** `est:30m`
+- [x] **T02: Polish workflow inputs for SE experience and add cross-suite verification** `est:30m`
   - Why: R010 requires SE-friendly inputs. Some workflows have terse descriptions, all-false defaults (VPC cloud booleans), or missing examples. A verification script ensures cross-workflow consistency is maintained.
   - Files: `.github/workflows/combined-demo.yml`, `.github/workflows/run-demo.yml`, `.github/workflows/vpc-deployment.yml`, `.github/workflows/cleanup.yml`, `scripts/verify-s03.sh`
   - Do: (1) Polish input descriptions across all 4 workflows — add examples where helpful, clarify terse descriptions (e.g., DNS `record_value`), ensure defaults make sense for zero-config demo. (2) Consider defaulting `deploy_aws: true` in VPC workflow so SE doesn't need to toggle anything. (3) Write `scripts/verify-s03.sh` that checks: all 4 YAMLs valid, all Terraform roots validate, badge count = 4, tag consistency, narration present in all workflows. (4) Run the script and fix any issues.

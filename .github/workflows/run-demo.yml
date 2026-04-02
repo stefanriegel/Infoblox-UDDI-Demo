@@ -10,7 +10,7 @@ on:
         options: ["Cloudflare (virtualife.pro)", "Azure DNS (az.gh.blox42.rocks)", "Route53 (aws.gh.blox42.rocks)", "Cloud DNS (gcp.gh.blox42.rocks)"]
         default: "Cloudflare (virtualife.pro)"
       record_name:
-        description: "DNS hostname"
+        description: "DNS hostname (without zone suffix, e.g., 'my-app' becomes my-app.virtualife.pro)"
         required: true
         type: string
       record_type:
@@ -20,17 +20,17 @@ on:
         options: [A, AAAA, TXT, CNAME]
         default: A
       record_value:
-        description: "A/AAAA=IP, CNAME=target FQDN (with dot), TXT=content"
+        description: "Record value: IP address for A (e.g., 10.0.1.1), IPv6 for AAAA, target FQDN with trailing dot for CNAME (e.g., example.com.), or text content for TXT"
         default: "203.0.113.10"
         required: true
         type: string
       ttl:
-        description: "TTL seconds"
+        description: "TTL in seconds (how long resolvers cache this record)"
         default: 120
         required: true
         type: number
       action:
-        description: "Terraform action"
+        description: "Terraform action to perform"
         required: true
         type: choice
         options: [apply, destroy]

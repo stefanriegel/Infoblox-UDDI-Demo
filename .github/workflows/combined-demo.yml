@@ -9,7 +9,7 @@ on:
         type: string
         default: "uddi-combined-demo"
       subnet_size:
-        description: "Subnet size (CIDR prefix length)"
+        description: "Subnet size as CIDR prefix length — smaller number = larger subnet (e.g., /24 = 256 IPs, /28 = 16 IPs)"
         required: true
         type: choice
         options:

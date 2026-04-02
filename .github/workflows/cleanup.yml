@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: 'Type "destroy" to confirm cleanup'
+        description: 'Safety gate — type "destroy" to confirm cleanup of all demo resources'
         required: true
         type: string
 

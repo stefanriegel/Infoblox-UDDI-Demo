@@ -96,3 +96,9 @@ R010 requires all workflow_dispatch inputs to be SE-friendly — clear descripti
 - `.github/workflows/vpc-deployment.yml` — `deploy_aws` defaults to `true`, improved boolean descriptions
 - `.github/workflows/cleanup.yml` — Minor description improvements if warranted, otherwise unchanged
 - `scripts/verify-s03.sh` — Cross-suite verification script that validates consistency
+
+## Observability Impact
+
+- **`scripts/verify-s03.sh`** — New diagnostic script. Run `bash scripts/verify-s03.sh` to validate cross-suite consistency: YAML parsing, badge presence, tag correctness, Terraform validation, narration, and SE-friendly input checks. Returns structured pass/fail counts. Exit code 0 = all checks pass.
+- **Input descriptions in GitHub Actions UI** — Workflow dispatch forms in GitHub Actions now show expanded descriptions with examples. Visual inspection confirms SE experience. No runtime signal — this is a UI-level improvement.
+- **`deploy_aws` default** — VPC workflow now defaults AWS to `true`. An SE triggering with no changes gets a working single-cloud demo. If the preflight check fails with "No cloud provider selected", the default was reverted.
