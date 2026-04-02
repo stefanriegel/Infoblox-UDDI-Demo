@@ -47,7 +47,7 @@
 
 ## Tasks
 
-- [ ] **T01: Create Terraform root for combined IPAM+VPC+DNS demo** `est:45m`
+- [x] **T01: Create Terraform root for combined IPAM+VPC+DNS demo** `est:45m`
   - Why: The Terraform configuration is the foundation — the workflow can't be written until outputs are defined. This merges the proven VPC-AWS and DNS patterns into a single root that chains IPAM allocation → VPC → DNS A record.
   - Files: `live/demos/combined/main.tf`, `live/demos/combined/variables.tf`
   - Do: Create `main.tf` merging providers (bloxone + aws + bloxone DNS), IPAM next_available_subnets → subnet reservation → VPC + IGW → DNS zone lookup → A record using `cidrhost(aws_vpc.main.cidr_block, 1)`. Create `variables.tf` with superset of vpc-aws + dns variables. Tag all resources per D003. Add Terraform outputs for workflow consumption: `vpc_id`, `vpc_cidr`, `subnet_id`, `dns_record_fqdn`, `dns_record_value`, `ipam_subnet_address`.

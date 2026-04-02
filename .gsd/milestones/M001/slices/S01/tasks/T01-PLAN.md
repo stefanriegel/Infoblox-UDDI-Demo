@@ -64,6 +64,13 @@ Create the Terraform configuration that chains three UDDI capabilities in one ro
 - Decision D001: UDDI-native sync only — create DNS record in UDDI, not directly in Route53.
 - Decision D003: Tag all resources `demo=true` + `automation=github-actions`.
 
+## Observability Impact
+
+- **Terraform validate** is the primary inspection signal: `cd live/demos/combined && terraform validate` confirms config integrity at any time.
+- **Outputs as diagnostic surface**: `terraform output` (after apply) exposes `vpc_id`, `vpc_cidr`, `dns_record_fqdn`, `dns_record_value`, `ipam_subnet_address` — the workflow reads these for narration and verification.
+- **Failure visibility**: Terraform plan/apply errors surface as exit code != 0 with HCL-level error messages (resource reference mismatches, provider issues). No custom error handling at this layer — that's the workflow's job (T02).
+- **No runtime signals in this task** — this is static configuration. Runtime observability comes from the workflow in T02.
+
 ## Expected Output
 
 - `live/demos/combined/main.tf` — Complete Terraform configuration chaining IPAM → VPC → DNS with proper resource references, tags, and outputs
