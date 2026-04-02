@@ -61,6 +61,8 @@ resource "aws_vpc" "main" {
   tags = {
     Name       = var.vpc_name
     demo       = "true"
+    Demo       = "true"
+    ManagedBy  = "terraform"
     automation = "github-actions"
   }
 }
@@ -71,6 +73,8 @@ resource "aws_internet_gateway" "main" {
   tags = {
     Name       = "${var.vpc_name}-igw"
     demo       = "true"
+    Demo       = "true"
+    ManagedBy  = "terraform"
     automation = "github-actions"
   }
 }

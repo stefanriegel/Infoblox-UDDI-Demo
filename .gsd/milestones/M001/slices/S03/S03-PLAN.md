@@ -24,6 +24,14 @@
 - `for f in .github/workflows/*.yml; do python3 -c "import yaml; yaml.safe_load(open('$f'))"; done` — all pass
 - `cd live/demos/combined && terraform init -backend=false && terraform validate` — passes
 - `bash scripts/verify-s03.sh` — runs all checks above plus input description coverage
+- **Failure-path check:** Run cleanup workflow with `dry_run: true` after deploying combined demo — verify VPC appears in cleanup discovery list (tag match). If VPC is missing from discovery output, tags are wrong.
+
+## Observability / Diagnostics
+
+- **Cleanup discovery:** The cleanup workflow logs all resources it discovers via tag filters (`tag:Demo,Values=true` + `tag:ManagedBy,Values=terraform`). After a combined demo deploy, the VPC and IGW should appear in cleanup's discovery output. If they don't, the tags in `main.tf` are incorrect.
+- **Badge rendering:** Job summaries are visible in the GitHub Actions run UI. Each workflow's summary tab should show the UDDI badge at the top. Visual inspection confirms rendering; `grep` confirms presence in source.
+- **Terraform validate:** Static validation catches tag syntax errors (e.g., duplicate keys, invalid HCL). No runtime signals needed — these are infrastructure tags, not application code.
+- **Failure visibility:** If cleanup can't find combined demo resources, the cleanup workflow's summary will show 0 VPCs discovered. This is the primary failure signal for incorrect tags.
 
 ## Integration Closure
 
@@ -33,7 +41,7 @@
 
 ## Tasks
 
-- [ ] **T01: Fix combined demo tags and add UDDI badge for cleanup discovery and presentation consistency** `est:25m`
+- [x] **T01: Fix combined demo tags and add UDDI badge for cleanup discovery and presentation consistency** `est:25m`
   - Why: Combined demo VPCs use lowercase `demo` tag and lack `ManagedBy = "terraform"` — cleanup workflow can't discover them (filters on `tag:Demo,Values=true` + `tag:ManagedBy,Values=terraform`). Combined workflow also missing the UDDI branding badge that S02 added to the other 3 workflows.
   - Files: `live/demos/combined/main.tf`, `.github/workflows/combined-demo.yml`
   - Do: (1) In `main.tf`, add `Demo = "true"` and `ManagedBy = "terraform"` tags to VPC and IGW resources. Keep existing lowercase `demo` for belt-and-suspenders. (2) In `combined-demo.yml`, add the UDDI badge `![Infoblox](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc)` to the job summary, matching the pattern from the other 3 workflows. (3) Verify Terraform validates and YAML parses.

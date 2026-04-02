@@ -254,6 +254,8 @@ jobs:
           check() { if [ "$1" = "$2" ] && [ -n "$1" ]; then echo "✅"; else echo "❌"; fi; }
 
           cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          ![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)
+
           # 🚀 Infoblox Universal DDI — Combined IPAM + VPC + DNS Demo
 
           ## Automation Architecture
