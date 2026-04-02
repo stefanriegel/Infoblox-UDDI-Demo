@@ -66,3 +66,10 @@ Use `.github/workflows/combined-demo.yml` as the **read-only reference** for pat
 ## Expected Output
 
 - `.github/workflows/run-demo.yml` — polished with narration, timing, standardized branding, harmonized Mermaid colors, and footer
+
+## Observability Impact
+
+- **Log narration:** Trigger DNS workflow via `workflow_dispatch` and check Actions logs for `╔══` boxed banners in each phase (setup, init, validate, plan, apply, verification).
+- **Timing signal:** Apply step emits `✅ DNS deployment completed in Xs` to logs and passes `apply_duration` via `$GITHUB_OUTPUT` for summary consumption.
+- **Summary rendering:** After a run, check the Actions summary tab for the UDDI badge, Mermaid diagram, config table with Apply Duration row, and value proposition footer.
+- **Footer consistency:** `grep 'Powered by.*Infoblox Universal DDI' .github/workflows/run-demo.yml` confirms the standardized footer is present.

@@ -73,6 +73,10 @@ jobs:
       - name: Set Zone FQDN based on provider
         id: set_zone
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Phase 1: Configuration & Zone Setup                      ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           # Extract provider name and zone from input
           case "${{ inputs.dns_provider }}" in
             "Cloudflare"*)
@@ -94,14 +98,28 @@ jobs:
           esac
 
       - name: Terraform Init
-        run: terraform init -input=false -no-color
+        run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Phase 2: Terraform Init                                  ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          terraform init -input=false -no-color
 
       - name: Terraform Validate
-        run: terraform validate -no-color
+        run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Phase 2b: Terraform Validate                             ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          terraform validate -no-color
 
       - name: Terraform Plan
         id: plan
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Phase 3: Terraform Plan                                  ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           terraform plan -input=false -no-color \
             -var="bloxone_host=${BLOXONE_HOST:-https://csp.infoblox.com}" \
             -var="bloxone_api_key=${BLOXONE_API_KEY}" \
@@ -113,14 +131,28 @@ jobs:
             -out=tfplan
 
       - name: Terraform Apply
+        id: apply
         if: ${{ inputs.action == 'apply' }}
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Phase 4: Terraform Apply                                 ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          APPLY_START=$(date +%s)
           terraform apply -input=false -auto-approve -no-color tfplan
           terraform output -json > tfoutputs.json
+          APPLY_END=$(date +%s)
+          APPLY_DURATION=$((APPLY_END - APPLY_START))
+          echo "✅ DNS deployment completed in ${APPLY_DURATION}s"
+          echo "apply_duration=${APPLY_DURATION}" >> $GITHUB_OUTPUT
 
       - name: Terraform Destroy
         if: ${{ inputs.action == 'destroy' }}
         run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Phase 4: Terraform Destroy                               ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           terraform destroy -input=false -auto-approve -no-color \
             -var="bloxone_host=${BLOXONE_HOST:-https://csp.infoblox.com}" \
             -var="bloxone_api_key=${BLOXONE_API_KEY}" \
@@ -148,6 +180,11 @@ jobs:
           GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
         run: |
           set -e
+          
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Phase 5: DNS Verification & Provider Status              ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
           
           # Wait for UDDI to Cloudflare sync
           echo "⏳ Waiting 10 seconds for UDDI → Cloudflare sync..."
@@ -585,17 +622,20 @@ jobs:
       - name: Job Summary - Header
         if: always()
         run: |
-          echo "# 🚀 Infoblox Universal DDI - Multi-Cloud DNS Automation" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## Executive Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "This demonstration showcases **Infoblox Universal DDI** as a **single source of truth** for DNS management across multiple cloud providers. DNS records created in UDDI are automatically synchronized to downstream DNS services." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          ![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)
+
+          # 🚀 Infoblox Universal DDI — DNS Demo
+
+          ## Executive Summary
+
+          This demonstration showcases **Infoblox Universal DDI** as a **single source of truth** for DNS management across multiple cloud providers. DNS records created in UDDI are automatically synchronized to downstream DNS services.
+
+          HEADER
           
           # Status badges
           if [ "${{ inputs.action }}" == "apply" ]; then
             echo "![Status](https://img.shields.io/badge/Status-Deployed-success?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
-            echo "![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
             echo "![Automation](https://img.shields.io/badge/Automation-Active-00C853?style=for-the-badge)" >> $GITHUB_STEP_SUMMARY
             # Dynamic target badge based on provider
             case "${{ inputs.dns_provider }}" in
@@ -714,6 +754,9 @@ jobs:
           echo "| **Value** | \`${{ inputs.record_value }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **TTL** | \`${{ inputs.ttl }}s\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Executed** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |" >> $GITHUB_STEP_SUMMARY
+          if [ -n "${{ steps.apply.outputs.apply_duration }}" ]; then
+            echo "| **Apply Duration** | \`${{ steps.apply.outputs.apply_duration }}s\` |" >> $GITHUB_STEP_SUMMARY
+          fi
           echo "" >> $GITHUB_STEP_SUMMARY
 
       - name: Job Summary - DNS Verification
@@ -1017,46 +1060,46 @@ jobs:
           fi
           
           # Business Value Section
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "## 💡 Value Proposition" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Key Benefits" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Unified Management** - Single pane of glass for all DNS across multi-cloud" >> $GITHUB_STEP_SUMMARY
-          echo "- **Zero-Touch Automation** - Eliminate manual DNS configuration in each cloud provider" >> $GITHUB_STEP_SUMMARY
-          echo "- **Multi-Cloud Native** - AWS, Azure, GCP, Cloudflare, and more from one platform" >> $GITHUB_STEP_SUMMARY
-          echo "- **Consistency & Compliance** - Enforce policies across all DNS services" >> $GITHUB_STEP_SUMMARY
-          echo "- **Rapid Deployment** - Infrastructure as Code enables GitOps workflows" >> $GITHUB_STEP_SUMMARY
-          echo "- **Complete Visibility** - Centralized audit trail and reporting" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Technical Notes
-          echo "### Technical Implementation" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "<details>" >> $GITHUB_STEP_SUMMARY
-          echo "<summary>Workflow Details for CloudOps/DevOps Teams</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**How This Workflow Operates:**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "1. **DNS Record Creation**: Terraform provisions DNS records in Infoblox UDDI via the BloxOne Terraform provider" >> $GITHUB_STEP_SUMMARY
-          echo "2. **Automatic Synchronization**: UDDI native integrations push records to downstream DNS services (Cloudflare, Azure DNS, Route53, Cloud DNS) within seconds" >> $GITHUB_STEP_SUMMARY
-          echo "3. **Multi-Resolver Verification**: Workflow validates DNS propagation across Google (8.8.8.8), Cloudflare (1.1.1.1), and Quad9 (9.9.9.9) resolvers" >> $GITHUB_STEP_SUMMARY
-          echo "4. **Provider API Validation**: Direct API queries to cloud DNS services confirm record deployment and retrieve metadata (TTL, proxy status, provisioning state)" >> $GITHUB_STEP_SUMMARY
-          echo "5. **State Management**: Terraform state cached in GitHub Actions for demo lifecycle management" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Key Technical Aspects:**" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Zone selection is automatic based on DNS provider (virtualife.pro for Cloudflare, az/aws/gcp.gh.blox42.rocks for others)" >> $GITHUB_STEP_SUMMARY
-          echo "- Provider verification uses native CLIs: Azure CLI (az), AWS CLI (aws), gcloud CLI (gcloud)" >> $GITHUB_STEP_SUMMARY
-          echo "- Route53 queries use \`aws route53 list-resource-record-sets\` with hosted zone ID" >> $GITHUB_STEP_SUMMARY
-          echo "- Cloud DNS queries use \`gcloud dns record-sets list\` with zone name derived from FQDN" >> $GITHUB_STEP_SUMMARY
-          echo "- Automated cleanup workflow runs daily at 00:00 GMT+2 using tag-based resource deletion" >> $GITHUB_STEP_SUMMARY
-          echo "- All credentials stored as GitHub Environment Secrets (environment: dev)" >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/bloxone-ddi/)** | Terraform UDDI Provider | GitHub Actions" >> $GITHUB_STEP_SUMMARY
+          cat >> $GITHUB_STEP_SUMMARY << 'VALUEPROP'
+          ---
+
+          ## 💡 Value Proposition
+
+          ### Key Benefits
+
+          - **Unified Management** - Single pane of glass for all DNS across multi-cloud
+          - **Zero-Touch Automation** - Eliminate manual DNS configuration in each cloud provider
+          - **Multi-Cloud Native** - AWS, Azure, GCP, Cloudflare, and more from one platform
+          - **Consistency & Compliance** - Enforce policies across all DNS services
+          - **Rapid Deployment** - Infrastructure as Code enables GitOps workflows
+          - **Complete Visibility** - Centralized audit trail and reporting
+
+          ### Technical Implementation
+
+          <details>
+          <summary>Workflow Details for CloudOps/DevOps Teams</summary>
+
+          **How This Workflow Operates:**
+
+          1. **DNS Record Creation**: Terraform provisions DNS records in Infoblox UDDI via the BloxOne Terraform provider
+          2. **Automatic Synchronization**: UDDI native integrations push records to downstream DNS services (Cloudflare, Azure DNS, Route53, Cloud DNS) within seconds
+          3. **Multi-Resolver Verification**: Workflow validates DNS propagation across Google (8.8.8.8), Cloudflare (1.1.1.1), and Quad9 (9.9.9.9) resolvers
+          4. **Provider API Validation**: Direct API queries to cloud DNS services confirm record deployment and retrieve metadata (TTL, proxy status, provisioning state)
+          5. **State Management**: Terraform state cached in GitHub Actions for demo lifecycle management
+
+          **Key Technical Aspects:**
+
+          - Zone selection is automatic based on DNS provider (virtualife.pro for Cloudflare, az/aws/gcp.gh.blox42.rocks for others)
+          - Provider verification uses native CLIs: Azure CLI (az), AWS CLI (aws), gcloud CLI (gcloud)
+          - Route53 queries use `aws route53 list-resource-record-sets` with hosted zone ID
+          - Cloud DNS queries use `gcloud dns record-sets list` with zone name derived from FQDN
+          - Automated cleanup workflow runs daily at 00:00 GMT+2 using tag-based resource deletion
+          - All credentials stored as GitHub Environment Secrets (environment: dev)
+          </details>
+
+          ---
+
+          VALUEPROP
+          echo "**Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/universal-ddi/)** | Terraform UDDI Provider | GitHub Actions" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "*This demo shows one of many cloud providers supported by Infoblox UDDI*" >> $GITHUB_STEP_SUMMARY
