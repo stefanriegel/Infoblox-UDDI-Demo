@@ -1,99 +1,84 @@
-# S02: Narrated Demo Output & Presentation Polish — Research
+# S02 — Narrated Demo Output & Presentation Polish — Research
 
 **Date:** 2026-04-02
-**Depth:** Targeted
+**Depth:** Targeted (known technology, multiple files to harmonize)
 
 ## Summary
 
-S02 owns R002 (narrated logs), R003 (professional summaries), R004 (consistent branding), R006 (DNS polish), R007 (VPC polish), R008 (timing metrics), R009 (Mermaid diagrams), R011 (cleanup branding). It supports R005 (production-grade feel).
+S02's job is to bring all four workflows (DNS, VPC, Cleanup, Combined) to a consistent, professional presentation standard. The DNS workflow (`run-demo.yml`, 1062 lines) is the most polished — it has dynamic Mermaid diagrams, status badges, provider-specific verification sections, and Infoblox branding. The VPC workflow (`vpc-deployment.yml`, 633 lines) has a basic summary with a confirmed bug: env var interpolation uses single quotes, so verification data never renders. The Cleanup workflow (`cleanup.yml`, 509 lines) has a minimal summary with no branding, no Mermaid diagrams, and no timing. The Combined workflow (`combined-demo.yml`, 417 lines) was built during S01 and already has narrated log output, timing, and a Mermaid diagram — but its style doesn't match the DNS workflow's richer pattern.
 
-The three target workflows (DNS, VPC, Cleanup) each need different levels of work. The VPC workflow has a **confirmed bug** — its summary job uses single-quoted `echo '${AWS_VERIFICATION}' | jq ...` which prevents bash variable expansion, meaning verification tables always render empty. The DNS workflow is already the most polished but lacks log narration, timing, and has inconsistencies. The cleanup workflow is the simplest — needs branding header, Mermaid, and consistent formatting.
-
-The combined workflow from S01 (`combined-demo.yml`) already implements the target patterns: boxed ASCII headers for phase narration, `date +%s` timing, a Mermaid LR flow diagram, and a clean summary layout. This is the reference implementation to replicate across the other three workflows.
+The work is straightforward: establish a shared presentation pattern (branding header, Mermaid style, narration format, timing approach), apply it to all four workflows, and fix the VPC summary bug. No new technology is involved. The risk is mainly in making the VPC summary job work correctly with cross-job output data.
 
 ## Recommendation
 
-Use the combined workflow as the gold standard and systematically apply its patterns to all three existing workflows. Work in this order: (1) fix the VPC summary bug first since it's the highest-risk item, (2) establish the shared branding/narration patterns across all workflows, (3) polish each workflow's summary.
+Use the DNS workflow's summary as the gold standard — it has the most complete pattern with badges, dynamic Mermaid, config table, verification, value proposition, and footer. Extract a consistent "presentation contract" from it:
 
-Do NOT extract patterns into reusable shell scripts or composite actions — the workflows need to remain self-contained for demo clarity and SE readability. Inline duplication is acceptable; a demo repo is not a DRY codebase.
+1. **Header**: Title with 🚀 emoji, "Executive Summary" paragraph, shields.io badges (Status, Infoblox UDDI, Automation, provider-specific)
+2. **Mermaid diagram**: Dynamic based on inputs, Infoblox blue (#0066cc) for UDDI node, provider-specific colors for targets
+3. **Configuration table**: Input parameters in a clean table
+4. **Results/Verification**: Provider-specific sections with ✅/⏳ status
+5. **Value Proposition**: Business benefits section
+6. **Footer**: "Powered by Infoblox Universal DDI" with link
+
+Apply this pattern to VPC, Cleanup, and Combined workflows. Add step narration (echo with box-drawing characters and phase announcements) to DNS and Cleanup, which currently lack it. Add `date +%s` timing capture to DNS and VPC workflows that don't have it yet.
 
 ## Implementation Landscape
 
 ### Key Files
 
-- `.github/workflows/run-demo.yml` (1062 lines) — DNS demo. Already has: dynamic Mermaid diagram per provider, shields.io badges, provider-specific verification sections, UDDI API transaction section. Missing: log narration (no step-by-step announcements during terraform init/plan/apply), timing metrics, consistent header branding matching combined workflow style. Summary is functional but verbose — each provider's verification section repeats similar markdown generation. Needs cleanup of the header section to match combined workflow's executive summary format.
+- `.github/workflows/run-demo.yml` — **DNS workflow, gold standard for presentation.** Summary is already rich (lines 690-1063). Needs: step-by-step narration added to Terraform steps (Init/Plan/Apply currently have no echo narration), timing capture around key phases (plan, apply, verification). Summary badge/branding pattern is the template for all others.
 
-- `.github/workflows/vpc-deployment.yml` (633 lines) — VPC demo. **Has confirmed bug in summary job (lines ~540-580):** the `Generate Summary` step sets env vars `AWS_VERIFICATION`, `AZURE_VERIFICATION`, `GCP_VERIFICATION` from job outputs, then uses `echo '${AWS_VERIFICATION}' | jq ...` — single quotes prevent expansion, so jq gets the literal string `${AWS_VERIFICATION}` and fails silently. Fix: change to `echo "${AWS_VERIFICATION}" | jq ...` or use heredoc. Beyond the bug: no Mermaid diagram, no branding badges, no narration in deploy steps, no timing metrics. The deploy loops in `aws_vpcs`/`azure_vnets`/`gcp_vpcs` jobs have basic echo statements but no structured narration.
+- `.github/workflows/vpc-deployment.yml` — **VPC workflow, needs the most work.** Summary job (lines 573-633) has a confirmed bug: lines 600, 611, 622 use `echo '${AWS_VERIFICATION}'` (single quotes) instead of `echo "${AWS_VERIFICATION}"` (double quotes), so env var values are never interpolated — jq receives the literal string `${AWS_VERIFICATION}`. Needs: fix the quote bug, add Infoblox branding header with badges, add Mermaid architecture diagram (UDDI IPAM → multi-cloud VPCs), add narrated echo output to deploy steps, add timing, add value proposition footer.
 
-- `.github/workflows/cleanup.yml` (509 lines) — Cleanup workflow. Two separate summary sections (`Job Summary` in cleanup_dns job, `VPC Cleanup Summary` in cleanup_vpc job). No unified summary, no Mermaid diagram, no branding header, no badges. The summaries are functional but minimal. Needs: unified branding header, a Mermaid diagram showing the cleanup discovery flow, consistent table formatting matching the other workflows.
+- `.github/workflows/cleanup.yml` — **Cleanup workflow, minimal summary.** Has two separate summary steps (DNS cleanup at line 192, VPC cleanup at line 448) in separate jobs. Needs: consistent branding, a Mermaid diagram showing the cleanup flow (scan → discover → delete), add narration to the scan/delete steps, consolidate or harmonize the two summary sections.
 
-- `.github/workflows/combined-demo.yml` (417 lines) — **Reference implementation** (from S01). Patterns to replicate:
-  - Boxed ASCII narration: `╔══════...╗` / `║  Phase description  ║` / `╚══════...╝`
-  - Phase announcements with emoji: `🔷 Phase 1: IPAM — ...`
-  - Timing with `date +%s`: capture START_TIME before apply, compute DURATION after
-  - Mermaid `graph LR` with phase-colored nodes and consistent `fill:#0066cc` for UDDI
-  - Summary with config table + results table + verification table
-  - Value proposition footer section
-  - Heredoc-based summary generation (cleaner than many `echo >>` lines)
-
-### Presentation Constants (to standardize)
-
-These should be consistent across ALL four workflows:
-
-| Element | Standard |
-|---------|----------|
-| UDDI brand color | `#0066cc` (Mermaid fill, badges) |
-| AWS color | `#FF9900` |
-| Azure color | `#0078D4` |
-| GCP color | `#4285F4` |
-| Cloudflare color | `#f38020` |
-| Success color | `#00C853` |
-| Verification color | `#7B1FA2` |
-| Header badge | `![UDDI](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc?style=for-the-badge)` |
-| Summary title prefix | `# 🚀 Infoblox Universal DDI —` |
-| Footer | `**Powered by [Infoblox Universal DDI](...)** \| Terraform UDDI Provider \| GitHub Actions` |
+- `.github/workflows/combined-demo.yml` — **Combined workflow from S01.** Already has narrated output and timing. Needs: align badges and branding header to match DNS workflow style (currently missing shields.io badges), refine Mermaid diagram styling to match DNS diagram conventions, add the "Value Proposition" section formatting to match.
 
 ### Build Order
 
-1. **Fix VPC summary bug** — highest risk, fastest to verify. Change single quotes to double quotes for env var expansion in the summary job's jq commands. This is a correctness fix independent of presentation work.
+1. **Fix VPC summary bug first** — Single-line fix (single quotes → double quotes on 3 lines), immediately testable. This retires a known risk and proves the cross-job output pipeline works.
 
-2. **Add narration to DNS workflow** — The DNS workflow has the most complex step structure. Add boxed ASCII headers and phase announcements to: Terraform Init, Terraform Plan, Terraform Apply, DNS Verification steps. Add timing around the apply step. This establishes the narration pattern.
+2. **Define branding constants and patterns** — Establish the exact badge URLs, Mermaid node colors, section headers, and narration format as a reference. Not a separate file (these are inline in YAML), but documented as a consistent pattern across all workflows.
 
-3. **Add narration to VPC workflow** — Similar pattern to DNS but applied to the per-cloud deploy loops (aws_vpcs, azure_vnets, gcp_vpcs jobs). Each deploy loop's inner iterations already have basic echo; enhance them with the boxed header pattern. Add timing per-VPC.
+3. **Polish VPC workflow** — Add full branding header, Mermaid diagram, narration, timing. Biggest transformation since it goes from basic to polished.
 
-4. **Polish DNS workflow summary** — Refactor the summary steps to use heredoc style (like combined workflow). Standardize the Mermaid diagram styling. Add timing metric to the config table. Add the value proposition footer. Keep the provider-specific verification sections but make them consistent.
+4. **Polish Cleanup workflow** — Add branding, Mermaid cleanup-flow diagram, narration to scan/delete steps.
 
-5. **Polish VPC workflow summary** — Rewrite the summary job with: branding header + badges, Mermaid diagram showing IPAM→multi-cloud flow, fixed verification tables, timing metrics, value proposition footer. This is the most work since the current summary is bare-bones.
+5. **Polish DNS workflow** — Add narration echo to Terraform steps (Init, Plan, Apply) and timing capture. Summary is already good — just add timing metrics.
 
-6. **Polish cleanup workflow summary** — Add unified branding header to both summary sections (or merge into one). Add a Mermaid diagram showing the cleanup discovery flow (scan zones → find tagged resources → delete). Add badges and footer.
-
-7. **Add narration to cleanup workflow** — Add phase announcements to the discovery and deletion steps.
+6. **Align Combined workflow** — Match badge style, refine Mermaid to use consistent node colors and styling.
 
 ### Verification Approach
 
-- **VPC bug fix:** Run `grep -n "echo '\\$" .github/workflows/vpc-deployment.yml` to confirm all single-quoted variable expansions are fixed. Then validate YAML syntax with `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/vpc-deployment.yml'))"`.
-- **YAML validity:** After each workflow edit, validate with `python3 -c "import yaml; yaml.safe_load(open('<file>'))"` — catches syntax errors before push.
-- **Mermaid rendering:** Mermaid diagrams should be checked by visual inspection of the markdown. Can't fully test without a GitHub Actions run, but syntax can be validated locally.
-- **Narration pattern:** Search for the boxed header pattern (`╔══`) in each workflow to confirm narration was added. Verify emoji phase markers (`🔷 Phase`) exist in key steps.
-- **Timing pattern:** Search for `date +%s` and `DURATION` in each workflow to confirm timing was added.
-- **Branding consistency:** Grep for the standard UDDI badge URL and footer text across all four workflows to confirm consistency.
-- **Full validation:** Trigger each workflow via `workflow_dispatch` on GitHub Actions and review the job summary output. This is the ultimate acceptance test but requires cloud credentials.
+- **VPC bug fix**: Run `bash -n .github/workflows/vpc-deployment.yml` won't catch this (it's valid bash, just wrong). Best verification: search for remaining single-quoted env var refs: `grep "echo '\\${"` across all workflow files. Confirm zero matches post-fix.
+- **Presentation consistency**: Visual review of all four summary step blocks. Check that each has: (1) shields.io badges, (2) Mermaid diagram, (3) configuration table, (4) results/verification, (5) value proposition, (6) footer.
+- **Narration**: Grep for narration patterns (box-drawing chars `╔`, phase announcements with 🔷/⏳/✅ emojis) in all four workflows.
+- **Timing**: Grep for `date +%s` pattern in all four workflows.
+- **YAML validity**: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/X.yml'))"` for each file.
+- **Final**: Trigger each workflow on GitHub and review the actual job summary output (human verification, matches R003 "visually compelling").
 
 ## Constraints
 
-- **GitHub job summary size limit:** Summaries are markdown appended to `$GITHUB_STEP_SUMMARY`. GitHub renders up to ~1MB but very long summaries may have rendering delays. The DNS workflow is already the longest — avoid making it significantly larger.
-- **Multi-job summaries in VPC workflow:** The VPC workflow has 4 jobs (preflight, aws_vpcs, azure_vnets, gcp_vpcs) plus a summary job. Each job gets its own summary section. The summary job aggregates via job outputs — this is where the bug is. The summary job's env vars receive JSON strings from job outputs.
-- **Cleanup has two parallel jobs:** `cleanup_dns` and `cleanup_vpc` run independently. Each has its own summary. They can't be merged into one summary without restructuring into a single job or adding a third summary job.
-- **Heredoc with GitHub expressions:** Using `cat >> $GITHUB_STEP_SUMMARY << EOF` works but `${{ }}` expressions are expanded by GitHub Actions before bash sees them. This means `${BASH_VAR}` and `${{ inputs.x }}` both work inside unquoted heredocs, but `<< 'EOF'` (quoted) prevents bash expansion while still allowing GitHub expression expansion. The combined workflow uses both patterns — follow its lead.
+- GitHub Actions job summaries support Mermaid, markdown tables, badges, and `<details>` blocks — but rendering has quirks with very long summaries. Keep each workflow's summary under ~10KB.
+- The VPC workflow's summary runs in a separate `summary` job that consumes outputs from parallel cloud jobs. Data passes via `needs.X.outputs.Y` → env vars. This cross-job pattern is fragile — env vars with JSON containing special chars can break.
+- shields.io badges are external HTTP requests — they work in GitHub summaries but won't render in offline/air-gapped environments. Acceptable tradeoff for demo use.
 
 ## Common Pitfalls
 
-- **Single vs double quotes around env vars in summary jobs** — The exact bug in the VPC workflow. When using `echo '${VAR}' | jq`, bash passes the literal `${VAR}` to jq. Always use `echo "${VAR}" | jq` when the variable contains JSON from job outputs. Review ALL summary steps for this pattern.
-- **GitHub secret masking in summaries** — GitHub masks any value that matches a secret. The DNS workflow already works around this by using literal zone names (e.g., `echo "| **Zone** | \`virtualife.pro\` |"`) instead of interpolating `${{ steps.set_zone.outputs.zone_fqdn }}`. Continue this pattern — never interpolate values that might match secrets into summary tables.
-- **Mermaid syntax strictness** — GitHub's Mermaid renderer is pickier than mermaid.live. Avoid special characters in node labels. Use `<br/>` for line breaks in labels. Always test that the fenced code block uses exactly ` ```mermaid ` with no trailing spaces.
-- **YAML multi-line strings** — When adding boxed ASCII art to `run:` blocks, ensure the `|` block scalar is used. The `╔══` characters are UTF-8 safe in YAML but pipe characters inside the art would need escaping if using `>` folded scalars.
+- **VPC cross-job JSON output** — The verification JSON from aws/azure/gcp jobs passes through `$GITHUB_OUTPUT` → `needs.X.outputs.Y` → env var → shell echo → jq. Any step that uses single quotes or fails to properly quote the JSON will silently produce empty output. After fixing the single-quote bug, also check that the env vars are declared at the job level with `${{ needs.X.outputs.Y }}` (they are — lines 577-579 are correct).
+- **Heredoc quoting in summaries** — The combined workflow uses `cat >> $GITHUB_STEP_SUMMARY << 'HEADER'` (quoted heredoc, no variable expansion) for static sections and `<< EOF` (unquoted, variables expand) for dynamic sections. This is correct but easy to mix up. VPC and Cleanup may need similar patterns for multi-line summary blocks.
+- **GitHub secret masking** — The DNS workflow carefully avoids using zone FQDNs from env vars in summaries (they get masked as secrets). Instead it uses literal strings in case blocks. Any new summary content with zone names should follow this pattern.
 
-## Open Risks
+## Requirements Coverage
 
-- **Summary rendering differences across GitHub Enterprise vs GitHub.com** — Some customers may view these on GHE which has older Mermaid support. Low risk but worth noting.
-- **Timing accuracy** — `date +%s` gives wall-clock seconds. Network latency to cloud APIs adds noise. Timing will vary between runs. The combined workflow shows this already works acceptably — just set expectations in the summary text ("approximately Xs").
+| Requirement | Role | What S02 Delivers |
+|-------------|------|-------------------|
+| R002 (narration) | Primary owner | Step-by-step echo narration in all 4 workflows |
+| R003 (professional summaries) | Primary owner | Consistent, polished job summaries across all 4 workflows |
+| R004 (consistent branding) | Primary owner | Shared badge style, Mermaid aesthetics, section headers, footer |
+| R006 (DNS polish) | Primary owner | Narration + timing added to DNS workflow |
+| R007 (VPC polish) | Primary owner | Bug fix + full presentation overhaul for VPC workflow |
+| R008 (timing metrics) | Primary owner | `date +%s` timing around key phases in all workflows |
+| R009 (Mermaid diagrams) | Primary owner | Consistent Mermaid style, new diagrams for VPC + Cleanup |
+| R011 (cleanup branding) | Primary owner | Branding + summary overhaul for cleanup workflow |
+| R005 (production-grade) | Supporting | Professional presentation contributes to production-grade feel |

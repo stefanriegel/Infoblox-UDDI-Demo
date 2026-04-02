@@ -1,65 +1,55 @@
 # S03: SE Experience & Final Integration
 
-**Goal:** All workflow inputs are SE-friendly with clear labels and defaults, cleanup handles combined demo resources, and the full demo suite is production-grade.
-**Demo:** An SE triggers any of the 4 workflows with zero prep, the inputs are self-explanatory, the output tells the UDDI story, and cleanup discovers and removes all demo resources including combined workflow VPCs.
+**Goal:** Polish all workflow inputs for SE use, extend cleanup to handle combined demo resources, align the combined workflow's presentation with S02's established conventions, and verify the full 4-workflow suite is consistent and production-grade.
+**Demo:** An SE picks any workflow from the suite, triggers it with sensible defaults, and gets a professional, self-explanatory experience from input to summary — across all 4 workflows.
 
 ## Must-Haves
 
-- Combined demo VPC/IGW tagged with `Demo = "true"` and `ManagedBy = "terraform"` (uppercase, matching cleanup filter)
-- UDDI branding badge present in all 4 workflow summaries (combined-demo.yml currently missing it)
-- All workflow_dispatch inputs have clear descriptions, sensible defaults, and logical ordering
-- Cross-workflow consistency verified: badge count = 4, all YAML valid, all Terraform valid
+- All workflow inputs have clear descriptions, sensible defaults, and logical ordering
+- Cleanup workflow discovers and removes combined demo resources (DNS records + VPC + IPAM subnets tagged `workflow=combined`)
+- Combined workflow's job summary follows S02's established presentation conventions exactly
+- All 4 workflows have consistent badge style, Mermaid aesthetics, section ordering, narration format
+- No workflow has stale/confusing input descriptions
 
 ## Proof Level
 
-- This slice proves: final-assembly
-- Real runtime required: no (live GitHub Actions run deferred — static verification covers all changes)
-- Human/UAT required: yes (SE should trigger each workflow once to confirm full experience)
-
-## Verification
-
-- `grep -c 'Infoblox-Universal_DDI-0066cc' .github/workflows/*.yml` — all 4 files return ≥1
-- `grep -c 'ManagedBy' live/demos/combined/main.tf` returns ≥2 (VPC + IGW)
-- `grep -c 'Demo.*=.*"true"' live/demos/combined/main.tf` returns ≥2 (VPC + IGW)
-- `for f in .github/workflows/*.yml; do python3 -c "import yaml; yaml.safe_load(open('$f'))"; done` — all pass
-- `cd live/demos/combined && terraform init -backend=false && terraform validate` — passes
-- `bash scripts/verify-s03.sh` — runs all checks above plus input description coverage
-- **Failure-path check:** Run cleanup workflow with `dry_run: true` after deploying combined demo — verify VPC appears in cleanup discovery list (tag match). If VPC is missing from discovery output, tags are wrong.
-
-## Observability / Diagnostics
-
-- **Cleanup discovery:** The cleanup workflow logs all resources it discovers via tag filters (`tag:Demo,Values=true` + `tag:ManagedBy,Values=terraform`). After a combined demo deploy, the VPC and IGW should appear in cleanup's discovery output. If they don't, the tags in `main.tf` are incorrect.
-- **Badge rendering:** Job summaries are visible in the GitHub Actions run UI. Each workflow's summary tab should show the UDDI badge at the top. Visual inspection confirms rendering; `grep` confirms presence in source.
-- **Terraform validate:** Static validation catches tag syntax errors (e.g., duplicate keys, invalid HCL). No runtime signals needed — these are infrastructure tags, not application code.
-- **Failure visibility:** If cleanup can't find combined demo resources, the cleanup workflow's summary will show 0 VPCs discovered. This is the primary failure signal for incorrect tags.
+- This slice proves: final-assembly (full suite consistency across all 4 workflows)
+- Real runtime required: no (changes are input polish + cleanup extension + presentation alignment)
+- Human/UAT required: yes (SE reviews complete suite)
 
 ## Integration Closure
 
-- Upstream surfaces consumed: `combined-demo.yml` from S01, presentation patterns (badge, HEADER/EOF/FOOTER heredoc, Mermaid palette) from S02, cleanup tag filter from existing `cleanup.yml`
-- New wiring introduced in this slice: none — this slice aligns existing artifacts, no new runtime paths
-- What remains before the milestone is truly usable end-to-end: Live GitHub Actions runs of all 4 workflows to visually confirm rendering
+- Upstream surfaces consumed: combined workflow from S01, presentation conventions from S02
+- New wiring introduced: cleanup awareness of combined demo resources
+- What remains before the milestone is truly usable end-to-end: nothing — this slice closes the loop
+
+## Verification
+
+- All 4 workflow YAML files valid
+- Combined workflow job summary uses same branding/Mermaid patterns as DNS/VPC workflows
+- Cleanup workflow scans for `workflow=combined` tagged resources
+- All `workflow_dispatch` inputs have `description` fields that are clear and non-technical
+- Default values are sensible for a quick demo trigger
 
 ## Tasks
 
-- [x] **T01: Fix combined demo tags and add UDDI badge for cleanup discovery and presentation consistency** `est:25m`
-  - Why: Combined demo VPCs use lowercase `demo` tag and lack `ManagedBy = "terraform"` — cleanup workflow can't discover them (filters on `tag:Demo,Values=true` + `tag:ManagedBy,Values=terraform`). Combined workflow also missing the UDDI branding badge that S02 added to the other 3 workflows.
-  - Files: `live/demos/combined/main.tf`, `.github/workflows/combined-demo.yml`
-  - Do: (1) In `main.tf`, add `Demo = "true"` and `ManagedBy = "terraform"` tags to VPC and IGW resources. Keep existing lowercase `demo` for belt-and-suspenders. (2) In `combined-demo.yml`, add the UDDI badge `![Infoblox](https://img.shields.io/badge/Infoblox-Universal_DDI-0066cc)` to the job summary, matching the pattern from the other 3 workflows. (3) Verify Terraform validates and YAML parses.
-  - Verify: `grep -c 'ManagedBy' live/demos/combined/main.tf` returns ≥2; `grep -c 'Infoblox-Universal_DDI-0066cc' .github/workflows/combined-demo.yml` returns ≥1; `terraform validate` passes; YAML parses.
-  - Done when: Cleanup filter will match combined demo VPCs, and badge count across all 4 workflows is ≥4.
+- [ ] **T01: Polish All Workflow Inputs** `est:45m`
+  - Why: SEs trigger these in front of customers — inputs must be clear, fast, and foolproof.
+  - Files: `.github/workflows/run-demo.yml`, `.github/workflows/vpc-deployment.yml`, `.github/workflows/combined-demo.yml`, `.github/workflows/cleanup.yml`
+  - Do: (1) Review every `workflow_dispatch` input across all 4 workflows. (2) Ensure descriptions are SE-friendly (not developer-oriented). E.g., "DNS hostname (e.g., www, api, app)" not "Record label (e.g. www)". (3) Ensure defaults allow a one-click demo — an SE should be able to hit "Run workflow" without changing anything and get a meaningful result. (4) Order inputs logically: most important first, action last. (5) For combined workflow: ensure input descriptions explain the full flow context.
+  - Verify: Read all input descriptions — each makes sense to someone who isn't a Terraform developer
+  - Done when: Every input across all 4 workflows is SE-friendly with sensible defaults
 
-- [x] **T02: Polish workflow inputs for SE experience and add cross-suite verification** `est:30m`
-  - Why: R010 requires SE-friendly inputs. Some workflows have terse descriptions, all-false defaults (VPC cloud booleans), or missing examples. A verification script ensures cross-workflow consistency is maintained.
-  - Files: `.github/workflows/combined-demo.yml`, `.github/workflows/run-demo.yml`, `.github/workflows/vpc-deployment.yml`, `.github/workflows/cleanup.yml`, `scripts/verify-s03.sh`
-  - Do: (1) Polish input descriptions across all 4 workflows — add examples where helpful, clarify terse descriptions (e.g., DNS `record_value`), ensure defaults make sense for zero-config demo. (2) Consider defaulting `deploy_aws: true` in VPC workflow so SE doesn't need to toggle anything. (3) Write `scripts/verify-s03.sh` that checks: all 4 YAMLs valid, all Terraform roots validate, badge count = 4, tag consistency, narration present in all workflows. (4) Run the script and fix any issues.
-  - Verify: `bash scripts/verify-s03.sh` passes all checks.
-  - Done when: All workflow inputs are self-documenting for an SE, verification script passes, and the full demo suite is consistent.
+- [ ] **T02: Extend Cleanup for Combined Demo & Align Presentation** `est:1h`
+  - Why: Combined demo creates resources that the current cleanup doesn't know about. Also need to ensure the combined workflow's summary matches S02's conventions.
+  - Files: `.github/workflows/cleanup.yml`, `.github/workflows/combined-demo.yml`
+  - Do: (1) In cleanup workflow: add the `aws.gh.blox42.rocks.` zone to the DNS cleanup scan if not already there (it is — verify). Ensure combined demo's VPC resources are found by the existing AWS VPC cleanup (they use `Demo=true` + `ManagedBy=terraform` tags — verify combined TF does the same). Ensure combined demo's IPAM subnets are found by existing IPAM cleanup (they use `demo=true` + `cloud=aws` tags — verify combined TF matches). (2) Review combined workflow's job summary: apply S02's badge style, Mermaid node colors, section ordering, narration format, and timing pattern. Ensure it's indistinguishable in quality from the polished DNS/VPC workflows. (3) Do a final consistency pass across all 4 workflow summaries — section headings, badge format, Mermaid style, narration echo format.
+  - Verify: Cleanup logic covers combined resources (tag matching verified), combined summary matches S02 conventions
+  - Done when: Cleanup handles combined demo, all 4 workflows are presentation-consistent
 
 ## Files Likely Touched
 
-- `live/demos/combined/main.tf`
-- `.github/workflows/combined-demo.yml`
 - `.github/workflows/run-demo.yml`
 - `.github/workflows/vpc-deployment.yml`
+- `.github/workflows/combined-demo.yml`
 - `.github/workflows/cleanup.yml`
-- `scripts/verify-s03.sh`

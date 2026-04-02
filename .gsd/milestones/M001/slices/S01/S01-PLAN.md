@@ -1,65 +1,53 @@
 # S01: Combined IPAM+DNS Workflow
 
-**Goal:** A single GitHub Actions workflow that allocates a subnet from UDDI IPAM, provisions a VPC on AWS, creates a DNS A record in UDDI pointing to the VPC's first usable IP, and verifies DNS sync to Route53.
-
-**Demo:** SE triggers `combined-demo.yml` via workflow_dispatch → logs narrate each phase (IPAM → VPC → DNS) with timing → job summary shows 3-stage Mermaid diagram, resource details, and verification results → cleanup destroys all resources on demand.
+**Goal:** Build a single GitHub Actions workflow that demonstrates the full UDDI value proposition: allocate subnet from IPAM → provision AWS VPC → create DNS A record in UDDI → verify DNS sync to Route53.
+**Demo:** SE triggers one workflow, customer sees UDDI allocate IP space, provision cloud networking, create DNS, and verify it all synced — in one run with a professional summary.
 
 ## Must-Haves
 
-- Terraform root that chains IPAM allocation → VPC creation → DNS A record creation with proper resource references
-- `cidrhost(vpc_cidr, 1)` derives the DNS record value from the allocated subnet — realistic "VPC entry point is DNS-resolvable" story
-- GitHub Actions workflow with `workflow_dispatch` inputs matching SE expectations (vpc_name, subnet_size, region, action)
-- DNS verification: dig against 3 resolvers + Route53 API check (same pattern as `run-demo.yml`)
-- Step-by-step log narration with phase timing (IPAM, VPC, DNS, Verification)
-- Professional job summary with Mermaid diagram, config table, verification results
-- Destroy path that tears down all resources cleanly
-- All resources tagged `demo=true` + `automation=github-actions` (D003)
-- UDDI-native DNS sync only — no dual-write to Route53 (D001)
-- Terraform state cached with unique key `tfstate-combined-*` to avoid collisions (D004)
+- Workflow runs end-to-end: IPAM allocation → VPC creation → DNS record creation → DNS verification
+- Job summary shows the complete flow with architecture diagram, config table, and verification results
+- All resources tagged `demo=true` for cleanup discovery
+- `terraform validate` passes on the combined Terraform root
+- Supports apply and destroy actions
+- AWS is the default cloud provider (per D002)
+- DNS uses UDDI-native sync model — record created in UDDI, verified on Route53 (per D001)
 
 ## Proof Level
 
-- This slice proves: integration (real cloud resources created and verified)
-- Real runtime required: yes (GitHub Actions with live credentials)
-- Human/UAT required: yes (SE reviews workflow output for demo readiness — deferred to S03)
+- This slice proves: integration (real cloud resources provisioned and DNS verified)
+- Real runtime required: yes (GitHub Actions with live cloud credentials)
+- Human/UAT required: yes (SE reviews output quality)
 
 ## Verification
 
-- `cd live/demos/combined && terraform init && terraform validate` passes with zero errors
-- `.github/workflows/combined-demo.yml` is valid YAML: `python3 -c "import yaml; yaml.safe_load(open('.github/workflows/combined-demo.yml'))"`
-- Cross-reference check: every `-var="X=${{ ... }}"` in the workflow has a matching variable in `live/demos/combined/variables.tf`
-- Cross-reference check: every `${{ steps.X.outputs.Y }}` in the workflow has a corresponding step ID with that output
-- Workflow references only secrets that exist in the `dev` environment: `BLOXONE_API_KEY`, `AWS_BLOCK_ID`, `IPAM_SPACE_ID`, `ROUTE53_HOSTED_ZONE_ID`
-- End-to-end: trigger workflow on GitHub Actions (integration verification, requires live credentials)
-
-## Observability / Diagnostics
-
-- Runtime signals: echo-based phase narration in workflow logs (e.g., `echo "🔷 Phase 1: IPAM Allocation"`), `date +%s` timing around each phase
-- Inspection surfaces: GitHub Actions job summary (Mermaid diagram + verification table), workflow run logs
-- Failure visibility: each phase checks exit code and reports failure context before aborting; Terraform plan output captured in logs; DNS verification shows actual vs expected
-- Redaction constraints: `BLOXONE_API_KEY` is a secret; zone names and IPs are safe to display in summaries
-
-## Integration Closure
-
-- Upstream surfaces consumed: `live/demos/vpc-aws/main.tf` (IPAM+VPC pattern), `live/demos/dns/main.tf` (DNS record pattern), `.github/workflows/run-demo.yml` (verification + summary pattern)
-- New wiring introduced in this slice: `live/demos/combined/` Terraform root + `.github/workflows/combined-demo.yml` workflow
-- What remains before the milestone is truly usable end-to-end: S02 polishes presentation consistency across all workflows; S03 adds SE-friendly input defaults, cleanup integration, and final QA
+- `cd live/demos/combined && terraform init && terraform validate` passes
+- Workflow YAML is valid (no syntax errors, all variable references resolve)
+- Job summary generation logic covers: Mermaid diagram, config table, IPAM results, VPC results, DNS verification, value proposition
+- Manual: trigger workflow on GitHub Actions and confirm end-to-end execution
 
 ## Tasks
 
-- [x] **T01: Create Terraform root for combined IPAM+VPC+DNS demo** `est:45m`
-  - Why: The Terraform configuration is the foundation — the workflow can't be written until outputs are defined. This merges the proven VPC-AWS and DNS patterns into a single root that chains IPAM allocation → VPC → DNS A record.
+- [ ] **T01: Combined Terraform Root** `est:1h`
+  - Why: Need a single Terraform configuration that chains IPAM allocation → VPC provisioning → DNS record creation. This is the core infrastructure-as-code for the combined demo.
   - Files: `live/demos/combined/main.tf`, `live/demos/combined/variables.tf`
-  - Do: Create `main.tf` merging providers (bloxone + aws + bloxone DNS), IPAM next_available_subnets → subnet reservation → VPC + IGW → DNS zone lookup → A record using `cidrhost(aws_vpc.main.cidr_block, 1)`. Create `variables.tf` with superset of vpc-aws + dns variables. Tag all resources per D003. Add Terraform outputs for workflow consumption: `vpc_id`, `vpc_cidr`, `subnet_id`, `dns_record_fqdn`, `dns_record_value`, `ipam_subnet_address`.
-  - Verify: `cd live/demos/combined && terraform init && terraform validate` exits 0
-  - Done when: Terraform validates cleanly and outputs cover everything the workflow will need (VPC CIDR, DNS FQDN, record IP)
+  - Do: Create `live/demos/combined/` directory with a Terraform root that: (1) uses `bloxone_ipam_next_available_subnets` to allocate from the AWS block, (2) creates `bloxone_ipam_subnet` to reserve it, (3) creates `aws_vpc` with the allocated CIDR, (4) creates `aws_internet_gateway`, (5) creates `bloxone_dns_a_record` in the `aws.gh.blox42.rocks.` zone pointing to a derived IP from the allocated CIDR. Follow patterns from existing `vpc-aws/main.tf` and `dns/main.tf`. Tag everything with `demo=true`, `automation=github-actions`, `workflow=combined`. Include proper outputs for all created resource IDs and CIDRs.
+  - Verify: `terraform init && terraform validate` in the combined directory
+  - Done when: Terraform config validates, has all 5 resource types, proper tags, and outputs
 
-- [x] **T02: Create GitHub Actions workflow with narration, verification, and job summary** `est:1h`
-  - Why: The workflow is the SE-facing artifact — it wires the Terraform root into a triggerable demo with narrated logs, DNS verification, and a professional summary. Also performs coherence verification against T01's variables/outputs.
+- [ ] **T02: Combined Workflow File** `est:1.5h`
+  - Why: Need the GitHub Actions workflow that orchestrates the Terraform, runs DNS verification, and generates the job summary. This is the SE-facing interface.
   - Files: `.github/workflows/combined-demo.yml`
-  - Do: Create workflow with `workflow_dispatch` inputs (vpc_name, subnet_size as choice, action as choice deploy/destroy). Structure: checkout → setup terraform 1.6.6 → cache restore (key: `tfstate-combined-${{ inputs.vpc_name }}`) → init → narrated plan/apply with phase timing (IPAM, VPC, DNS) → extract Terraform outputs → DNS verification (sleep 15 + dig against 8.8.8.8, 1.1.1.1, 9.9.9.9 + Route53 API via `aws route53 list-resource-record-sets`) → generate job summary with Mermaid 3-stage diagram, config table, verification results, value proposition footer → destroy path. Use `dev` environment for secrets. Cross-reference all `-var` flags against `variables.tf`, all step output references against step IDs. Follow `run-demo.yml` patterns for summary generation and verification. Skill note: load `github-workflows` skill for workflow syntax reference.
-  - Verify: YAML parses cleanly; every workflow variable reference maps to a Terraform variable; every step output reference has a source step; workflow references only known secrets from `dev` environment
-  - Done when: Workflow file is syntactically valid, all cross-references are correct, and the file is ready for a live GitHub Actions run
+  - Do: Create workflow with `workflow_dispatch` inputs (network_name, record_name, subnet_size, action). Steps: checkout, setup terraform, cache state, terraform init/plan/apply, DNS verification via dig + Route53 API, narrated echo output at each phase with timing, and job summary generation with Mermaid diagram showing IPAM→VPC→DNS flow. Follow the DNS workflow pattern for verification steps and summary generation. Include destroy action support. Use cache key pattern `tfstate-combined-{network_name}` for state isolation.
+  - Verify: YAML syntax valid, all input references resolve, step names are descriptive for SE narration
+  - Done when: Workflow file is complete with all steps, narration, and summary generation
+
+- [ ] **T03: Verify Combined Demo End-to-End** `est:30m`
+  - Why: The Terraform and workflow need to work together. Verify the full config is coherent and ready for a real run.
+  - Files: `live/demos/combined/main.tf`, `.github/workflows/combined-demo.yml`
+  - Do: Review the complete workflow for: (1) all TF variable references match workflow env vars, (2) state cache path is correct, (3) DNS verification constructs the right FQDN from inputs, (4) job summary references correct step outputs, (5) destroy action properly cleans up. Fix any issues found.
+  - Verify: Full review pass with no unresolved references, `terraform validate` still passes
+  - Done when: Combined demo is internally consistent and ready for a live GitHub Actions run
 
 ## Files Likely Touched
 

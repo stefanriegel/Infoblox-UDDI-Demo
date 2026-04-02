@@ -4,39 +4,38 @@
 
 ## Success Criteria
 
-- An SE can trigger the combined IPAM+DNS workflow and walk a customer through the output without verbal explanation
-- All workflows produce consistent, professionally branded job summaries with Mermaid diagrams
-- Workflow logs include step-by-step narration with timing that tells the UDDI value story
-- The demo suite never feels like a toy or POC — error handling, verification, and operational patterns are visible
+- SE triggers the combined IPAM+DNS workflow and the job summary alone tells the full UDDI value story without verbal explanation
+- All 4 workflows produce consistent, Infoblox-branded job summaries with Mermaid diagrams, timing metrics, and step-by-step narration in the logs
+- Workflow logs read like a guided demo — each phase announced, progress visible, results clear
+- The cleanup workflow discovers and removes resources from all demo types including the new combined workflow
+- An SE with zero preparation can trigger any demo and have the output be customer-ready
 
 ## Key Risks / Unknowns
 
-- **Combined workflow state management** — Chaining IPAM → VPC → DNS in one workflow with proper state and error handling
-- **GitHub job summary rendering** — Mermaid and markdown rendering has quirks; long summaries may hit limits
-- **VPC summary interpolation bug** — Existing VPC summary step may have broken env var interpolation
+- **Combined workflow state management** — Chaining IPAM → VPC → DNS in one workflow with Terraform requires either multiple TF roots or a single combined root. State caching must isolate combined demo state from existing demos.
+- **VPC summary interpolation** — The existing VPC summary job uses `echo '${VAR}'` with env vars containing JSON, which doesn't interpolate in single quotes. Needs fixing.
 
 ## Proof Strategy
 
-- Combined workflow complexity → retire in S01 by proving end-to-end IPAM+DNS flow works on real cloud infrastructure
-- Presentation consistency → retire in S02 by producing all 4 workflow summaries with identical branding and narration style
-- VPC summary bug → retire in S02 by fixing and verifying VPC workflow output
+- Combined workflow state management → retire in S01 by building and running the complete IPAM+VPC+DNS Terraform root with proper state isolation
+- VPC summary interpolation → retire in S02 by fixing the summary step and verifying rendered output
 
 ## Verification Classes
 
-- Contract verification: workflows trigger without errors, job summaries render correctly
-- Integration verification: combined workflow provisions real cloud resources and verifies DNS sync
-- Operational verification: cleanup workflow handles combined demo resources
-- UAT / human verification: SE reviews workflow output for demo readiness
+- Contract verification: `terraform validate` on all TF configs, YAML lint on workflow files
+- Integration verification: combined workflow provisions real AWS VPC + DNS record via UDDI (requires live run)
+- Operational verification: cleanup workflow finds and removes combined demo resources
+- UAT / human verification: SE reviews job summary output across all workflows for demo readiness
 
 ## Milestone Definition of Done
 
 This milestone is complete only when all are true:
 
-- Combined IPAM+DNS workflow runs end-to-end on at least one cloud provider
-- All 4 workflows (DNS, VPC, Combined, Cleanup) produce consistent, professional summaries
-- Step-by-step narration visible in all workflow logs
-- Cleanup workflow discovers and removes combined demo resources
-- An SE can trigger any demo with zero prep and the output tells the story
+- Combined IPAM+DNS workflow has been triggered on GitHub Actions and produces end-to-end output with VPC + DNS verified
+- DNS, VPC, and Cleanup workflows produce polished summaries matching the combined workflow's presentation quality
+- Step-by-step narration with timing is present in all workflow logs
+- Cleanup workflow discovers combined demo resources via `demo=true` tags
+- All workflow inputs have clear descriptions and sensible defaults for SE use
 
 ## Requirement Coverage
 
@@ -47,41 +46,46 @@ This milestone is complete only when all are true:
 
 ## Slices
 
-- [x] **S01: Combined IPAM+DNS Workflow** `risk:high` `depends:[]`
-  > After this: SE triggers one workflow that allocates a subnet from UDDI IPAM, provisions a VPC on AWS, creates a DNS A record in UDDI pointing to the VPC's CIDR, and verifies the DNS record synced to the cloud DNS provider — all proven with real cloud resources.
+- [ ] **S01: Combined IPAM+DNS Workflow** `risk:high` `depends:[]`
+  > After this: SE triggers one workflow that allocates a subnet from UDDI IPAM, provisions an AWS VPC, creates a DNS A record in UDDI for the VPC, and verifies DNS sync to Route53 — all proven with real cloud resources and a professional job summary.
 
-- [x] **S02: Narrated Demo Output & Presentation Polish** `risk:medium` `depends:[]`
-  > After this: All existing workflows (DNS, VPC, Cleanup) produce professional, step-by-step narrated job summaries with consistent Infoblox branding, timing metrics, and improved Mermaid diagrams — verified by reviewing actual workflow run output.
+- [ ] **S02: Narrated Demo Output & Presentation Polish** `risk:medium` `depends:[]`
+  > After this: All 3 existing workflows (DNS, VPC, Cleanup) produce professional, step-by-step narrated job summaries with consistent Infoblox branding, timing metrics, and improved Mermaid diagrams — verified by reviewing the actual workflow YAML changes and their summary generation logic.
 
-- [x] **S03: SE Experience & Final Integration** `risk:low` `depends:[S01,S02]`
-  > After this: All workflow inputs are SE-friendly with clear labels and defaults, cleanup handles combined demo resources, and the full demo suite is production-grade — verified by triggering each workflow and confirming the complete experience.
+- [ ] **S03: SE Experience & Final Integration** `risk:low` `depends:[S01,S02]`
+  > After this: All workflow inputs are SE-friendly, cleanup handles combined demo resources, the combined workflow matches S02's presentation patterns, and the full 4-workflow demo suite is consistent and production-grade.
 
 ## Boundary Map
 
 ### S01 → S03
 
 Produces:
-- `.github/workflows/combined-demo.yml` — Complete combined IPAM+DNS workflow with job summary
-- `live/demos/combined/` — Terraform configs for combined demo (IPAM allocation + VPC + DNS record)
-- Resources tagged with `demo=true` and identifiable pattern for cleanup discovery
+- `.github/workflows/combined-demo.yml` — Complete workflow with `workflow_dispatch` inputs, Terraform execution, DNS verification, and job summary
+- `live/demos/combined/main.tf` — Terraform root combining IPAM next-available subnet, `aws_vpc`, and `bloxone_dns_a_record` in one apply
+- `live/demos/combined/variables.tf` — Input variables for combined demo (network name, DNS record name, subnet size, cloud provider)
+- Tag pattern: all resources tagged `demo=true`, `automation=github-actions`, `workflow=combined`
+- Job summary structure: architecture Mermaid, config table, IPAM allocation details, VPC details, DNS verification, value proposition
 
 Consumes:
-- nothing (first slice, uses existing UDDI/cloud infrastructure)
+- nothing (first slice — uses existing UDDI IPAM blocks, zones, and cloud credentials)
 
 ### S02 → S03
 
 Produces:
-- Updated `.github/workflows/run-demo.yml` — DNS workflow with narrated output and polished summary
-- Updated `.github/workflows/vpc-deployment.yml` — VPC workflow with narrated output and polished summary
-- Updated `.github/workflows/cleanup.yml` — Cleanup workflow with polished summary
-- Established presentation patterns: branding constants, Mermaid style, narration format, timing approach
+- Updated `.github/workflows/run-demo.yml` — Narrated steps, consistent branding, timing, improved Mermaid
+- Updated `.github/workflows/vpc-deployment.yml` — Fixed summary interpolation, narrated steps, consistent branding, timing
+- Updated `.github/workflows/cleanup.yml` — Consistent branding, improved summary
+- Established presentation conventions: badge style, Mermaid node colors, section ordering, narration echo format, timing capture pattern (`SECONDS` env var or `date +%s` deltas)
 
 Consumes:
-- nothing (parallel with S01, works on existing workflows)
+- nothing (works on existing workflows in parallel with S01)
 
 ### S01 + S02 → S03
 
-S03 consumes:
-- Combined workflow from S01 (applies SE-friendly input polish)
-- Presentation patterns from S02 (ensures combined workflow matches the established style)
-- Cleanup tag patterns from S01 (extends cleanup to handle combined demo resources)
+S03 consumes from S01:
+- Combined workflow file (applies input polish, ensures cleanup awareness)
+- Combined demo tag patterns (extends cleanup to discover them)
+
+S03 consumes from S02:
+- Presentation conventions (applies to combined workflow's summary to ensure consistency)
+- Narration patterns (ensures combined workflow log narration matches established style)

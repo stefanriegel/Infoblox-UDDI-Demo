@@ -4,7 +4,7 @@ This file is the explicit capability and coverage contract for the project.
 
 ## Active
 
-### R001 — Combined IPAM+DNS demo workflow
+### R001 — A single GitHub Actions workflow that demonstrates the full UDDI value: allocate subnet from IPAM → provision VPC on a cloud provider → create DNS record in UDDI → verify DNS sync to cloud DNS provider. End-to-end in one action.
 - Class: core-capability
 - Status: active
 - Description: A single GitHub Actions workflow that demonstrates the full UDDI value: allocate subnet from IPAM → provision VPC on a cloud provider → create DNS record in UDDI → verify DNS sync to cloud DNS provider. End-to-end in one action.
@@ -15,7 +15,7 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Static verification complete (Terraform validates, YAML parses, tags match cleanup filters, badge present, cross-suite script passes). Live run required for full validation.
 - Notes: Should support at least one cloud provider (AWS preferred as primary). DNS model is UDDI-native sync only.
 
-### R002 — Step-by-step narrated workflow output
+### R002 — Workflow logs include clear, step-by-step narration that an SE can walk through live during a demo. Each phase is announced, progress is visible, and the story flows naturally.
 - Class: differentiator
 - Status: active
 - Description: Workflow logs include clear, step-by-step narration that an SE can walk through live during a demo. Each phase is announced, progress is visible, and the story flows naturally.
@@ -26,7 +26,7 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Applies to all workflows, not just the new combined one.
 
-### R003 — Professional job summary presentation
+### R003 — GitHub Actions job summaries are clean, professional, and visually compelling. Tables are well-formatted, sections are logically organized, and the output looks production-grade.
 - Class: differentiator
 - Status: active
 - Description: GitHub Actions job summaries are clean, professional, and visually compelling. Tables are well-formatted, sections are logically organized, and the output looks production-grade.
@@ -37,18 +37,7 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Existing summaries are functional but inconsistent and verbose.
 
-### R004 — Consistent branding across all workflows
-- Class: quality-attribute
-- Status: validated
-- Description: All workflow summaries share consistent Infoblox/UDDI branding, color scheme, badge style, section headers, and Mermaid diagram aesthetics.
-- Why it matters: Inconsistent presentation undermines the "production-grade" message. A customer seeing different styles across demos questions the maturity.
-- Source: user
-- Primary owning slice: M001/S02
-- Supporting slices: none
-- Validation: All 4 workflows contain UDDI badge (grep count 4/4). Verified by scripts/verify-s03.sh.
-- Notes: Current DNS demo has more polish than VPC demo. Need to harmonize.
-
-### R005 — Production-grade feel
+### R005 — The demo should never feel like a toy or POC. Error handling is visible, verification is thorough, resource lifecycle is clean, and the automation patterns shown are adoptable in production.
 - Class: quality-attribute
 - Status: active
 - Description: The demo should never feel like a toy or POC. Error handling is visible, verification is thorough, resource lifecycle is clean, and the automation patterns shown are adoptable in production.
@@ -59,7 +48,7 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: Cleanup discovers combined demo resources via uppercase Demo/ManagedBy tags. Cross-suite verification script ensures consistency. Static verification complete; live UAT pending.
 - Notes: Encompasses error handling, cleanup, verification depth, and overall operational maturity.
 
-### R006 — DNS demo presentation polish
+### R006 — The existing DNS demo workflow gets improved job summary, narrated log output, better Mermaid diagrams, and consistent branding.
 - Class: primary-user-loop
 - Status: active
 - Description: The existing DNS demo workflow gets improved job summary, narrated log output, better Mermaid diagrams, and consistent branding.
@@ -70,7 +59,7 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Core Terraform is solid — this is presentation-layer only.
 
-### R007 — VPC demo presentation polish
+### R007 — The existing VPC demo workflow gets improved job summary, narrated log output, better Mermaid diagrams, and consistent branding.
 - Class: primary-user-loop
 - Status: active
 - Description: The existing VPC demo workflow gets improved job summary, narrated log output, better Mermaid diagrams, and consistent branding.
@@ -81,7 +70,7 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: VPC summary job currently uses env var interpolation that may not work (jq in echo).
 
-### R008 — Timing/performance metrics in output
+### R008 — Workflow output includes timing for key phases (IPAM allocation, cloud provisioning, DNS sync, verification), showing how fast the automation is.
 - Class: differentiator
 - Status: active
 - Description: Workflow output includes timing for key phases (IPAM allocation, cloud provisioning, DNS sync, verification), showing how fast the automation is.
@@ -92,7 +81,7 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Should be unobtrusive — timing as annotation, not the focus.
 
-### R009 — Mermaid diagram improvements
+### R009 — Mermaid architecture diagrams in job summaries are cleaner, more visually consistent, and accurately reflect the flow for the specific demo run.
 - Class: quality-attribute
 - Status: active
 - Description: Mermaid architecture diagrams in job summaries are cleaner, more visually consistent, and accurately reflect the flow for the specific demo run.
@@ -103,18 +92,7 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Current DNS demo has dynamic Mermaid based on provider selection — good pattern to standardize.
 
-### R010 — SE-friendly workflow inputs
-- Class: launchability
-- Status: validated
-- Description: All workflow_dispatch inputs have clear descriptions, sensible defaults, and are ordered logically so an SE can trigger a demo quickly and confidently.
-- Why it matters: An SE in front of a customer can't fumble with confusing input fields. Speed and confidence matter.
-- Source: inferred
-- Primary owning slice: M001/S03
-- Supporting slices: none
-- Validation: All 4 workflows have expanded input descriptions with examples, deploy_aws defaults to true, CIDR explanations added. Verified by scripts/verify-s03.sh.
-- Notes: Current inputs are functional but could be clearer (e.g., DNS value field description).
-
-### R011 — Cleanup workflow presentation polish
+### R011 — The cleanup workflow gets consistent branding and clear summary output showing what was found and cleaned across all providers.
 - Class: operability
 - Status: active
 - Description: The cleanup workflow gets consistent branding and clear summary output showing what was found and cleaned across all providers.
@@ -125,9 +103,33 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Lower priority than DNS/VPC/Combined polish but should match.
 
+## Validated
+
+### R004 — All workflow summaries share consistent Infoblox/UDDI branding, color scheme, badge style, section headers, and Mermaid diagram aesthetics.
+- Class: quality-attribute
+- Status: validated
+- Description: All workflow summaries share consistent Infoblox/UDDI branding, color scheme, badge style, section headers, and Mermaid diagram aesthetics.
+- Why it matters: Inconsistent presentation undermines the "production-grade" message. A customer seeing different styles across demos questions the maturity.
+- Source: user
+- Primary owning slice: M001/S02
+- Supporting slices: none
+- Validation: All 4 workflows contain UDDI badge (grep count 4/4). Mermaid color palette consistent per D007. Footer standardized. Verified by scripts/verify-s03.sh.
+- Notes: Current DNS demo has more polish than VPC demo. Need to harmonize.
+
+### R010 — All workflow_dispatch inputs have clear descriptions, sensible defaults, and are ordered logically so an SE can trigger a demo quickly and confidently.
+- Class: launchability
+- Status: validated
+- Description: All workflow_dispatch inputs have clear descriptions, sensible defaults, and are ordered logically so an SE can trigger a demo quickly and confidently.
+- Why it matters: An SE in front of a customer can't fumble with confusing input fields. Speed and confidence matter.
+- Source: inferred
+- Primary owning slice: M001/S03
+- Supporting slices: none
+- Validation: All 4 workflows have expanded input descriptions with examples, deploy_aws defaults to true, CIDR explanations added. Verified by scripts/verify-s03.sh assertions.
+- Notes: Current inputs are functional but could be clearer (e.g., DNS value field description).
+
 ## Deferred
 
-### R012 — README/docs updated for demo context
+### R012 — Update README.md and docs to reflect the enhanced demo suite, including the new combined workflow and SE usage guide.
 - Class: operability
 - Status: deferred
 - Description: Update README.md and docs to reflect the enhanced demo suite, including the new combined workflow and SE usage guide.
@@ -138,24 +140,20 @@ This file is the explicit capability and coverage contract for the project.
 - Validation: unmapped
 - Notes: Deferred — the workflows themselves should be self-explanatory. Docs can follow.
 
-## Out of Scope
-
-*None identified.*
-
 ## Traceability
 
 | ID | Class | Status | Primary owner | Supporting | Proof |
 |---|---|---|---|---|---|
-| R001 | core-capability | active | M001/S01 | M001/S03 | static-verified |
+| R001 | core-capability | active | M001/S01 | M001/S03 | Static verification complete (Terraform validates, YAML parses, tags match cleanup filters, badge present, cross-suite script passes). Live run required for full validation. |
 | R002 | differentiator | active | M001/S02 | M001/S01 | unmapped |
 | R003 | differentiator | active | M001/S02 | none | unmapped |
-| R004 | quality-attribute | validated | M001/S02 | none | 4/4 badge coverage, verify-s03.sh |
-| R005 | quality-attribute | active | M001/S03 | M001/S01, M001/S02 | unmapped |
+| R004 | quality-attribute | validated | M001/S02 | none | All 4 workflows contain UDDI badge (grep count 4/4). Mermaid color palette consistent per D007. Footer standardized. Verified by scripts/verify-s03.sh. |
+| R005 | quality-attribute | active | M001/S03 | M001/S01, M001/S02 | Cleanup discovers combined demo resources via uppercase Demo/ManagedBy tags. Cross-suite verification script ensures consistency. Static verification complete; live UAT pending. |
 | R006 | primary-user-loop | active | M001/S02 | none | unmapped |
 | R007 | primary-user-loop | active | M001/S02 | none | unmapped |
 | R008 | differentiator | active | M001/S02 | M001/S01 | unmapped |
 | R009 | quality-attribute | active | M001/S02 | none | unmapped |
-| R010 | launchability | validated | M001/S03 | none | verify-s03.sh assertions |
+| R010 | launchability | validated | M001/S03 | none | All 4 workflows have expanded input descriptions with examples, deploy_aws defaults to true, CIDR explanations added. Verified by scripts/verify-s03.sh assertions. |
 | R011 | operability | active | M001/S02 | none | unmapped |
 | R012 | operability | deferred | none | none | unmapped |
 
@@ -163,5 +161,5 @@ This file is the explicit capability and coverage contract for the project.
 
 - Active requirements: 9
 - Mapped to slices: 9
-- Validated: 2
+- Validated: 2 (R004, R010)
 - Unmapped active requirements: 0
