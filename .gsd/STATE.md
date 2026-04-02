@@ -1,10 +1,9 @@
 # GSD State
 
 **Active Milestone:** M001: Customer Demo Enhancement
-**Active Slice:** S03: SE Experience & Final Integration
+**Active Slice:** S01: Combined IPAM+DNS Workflow
 **Phase:** executing
-**Active Task:** T01
-**Requirements Status:** 11 active · 0 validated · 1 deferred · 0 out of scope
+**Requirements Status:** 9 active · 2 validated · 1 deferred · 0 out of scope
 
 ## Milestone Registry
 - 🔄 **M001:** Customer Demo Enhancement
@@ -16,4 +15,4 @@
 - None
 
 ## Next Action
-Execute T01: Fix combined demo tags and add UDDI badge.
+Execute T01: Combined Terraform Root in slice S01.
