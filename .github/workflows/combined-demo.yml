@@ -1,0 +1,417 @@
+name: "UDDI - Combined IPAM+VPC+DNS"
+
+on:
+  workflow_dispatch:
+    inputs:
+      vpc_name:
+        description: "VPC name (used for resource naming and state isolation)"
+        required: true
+        type: string
+        default: "uddi-combined-demo"
+      subnet_size:
+        description: "Subnet size (CIDR prefix length)"
+        required: true
+        type: choice
+        options:
+          - "24"
+          - "25"
+          - "26"
+          - "27"
+          - "28"
+        default: "24"
+      action:
+        description: "Action to perform"
+        required: true
+        type: choice
+        options:
+          - "deploy"
+          - "destroy"
+        default: "deploy"
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  deploy:
+    name: "IPAM → VPC → DNS (Deploy)"
+    if: ${{ inputs.action == 'deploy' }}
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: live/demos/combined
+    env:
+      BLOXONE_HOST: ${{ vars.BLOXONE_HOST }}
+      BLOXONE_API_KEY: ${{ secrets.BLOXONE_API_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+
+    steps:
+      # ── Setup ──────────────────────────────────────────────────────────
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/combined/.terraform
+            live/demos/combined/.terraform.lock.hcl
+            live/demos/combined/terraform.tfstate
+            live/demos/combined/terraform.tfstate.backup
+          key: tfstate-combined-${{ inputs.vpc_name }}
+
+      - name: Terraform Init
+        run: terraform init -input=false -no-color
+
+      # ── Plan (narrated) ───────────────────────────────────────────────
+      - name: "Narrated Plan: IPAM → VPC → DNS"
+        id: plan
+        run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  UDDI Combined Demo — Terraform Plan                       ║"
+          echo "║  VPC: ${{ inputs.vpc_name }}  Subnet: /${{ inputs.subnet_size }}              ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "🔷 Phase 1: IPAM — Allocate next available /${{ inputs.subnet_size }} subnet"
+          echo "🔷 Phase 2: VPC  — Provision AWS VPC with allocated CIDR"
+          echo "🔷 Phase 3: DNS  — Create A record for VPC entry point"
+          echo ""
+
+          terraform plan -input=false -no-color \
+            -var="bloxone_host=${BLOXONE_HOST:-https://csp.infoblox.com}" \
+            -var="bloxone_api_key=${BLOXONE_API_KEY}" \
+            -var="vpc_name=${{ inputs.vpc_name }}" \
+            -var="subnet_size=${{ inputs.subnet_size }}" \
+            -var="aws_block_id=${{ secrets.AWS_BLOCK_ID }}" \
+            -var="ipam_space_id=${{ secrets.IPAM_SPACE_ID }}" \
+            -out=tfplan
+
+      # ── Apply (timed) ─────────────────────────────────────────────────
+      - name: "Terraform Apply (all phases)"
+        id: apply
+        run: |
+          START_TIME=$(date +%s)
+          echo ""
+          echo "🚀 Applying all three phases atomically..."
+          echo "   Start: $(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+          echo ""
+
+          terraform apply -input=false -auto-approve -no-color tfplan
+
+          END_TIME=$(date +%s)
+          DURATION=$((END_TIME - START_TIME))
+          echo ""
+          echo "✅ Apply completed in ${DURATION}s"
+          echo "apply_duration=${DURATION}" >> $GITHUB_OUTPUT
+          echo "apply_start=${START_TIME}" >> $GITHUB_OUTPUT
+
+      # ── Extract outputs ────────────────────────────────────────────────
+      - name: Extract Terraform outputs
+        id: outputs
+        run: |
+          terraform output -json > tfoutputs.json
+
+          VPC_ID=$(terraform output -raw vpc_id)
+          VPC_CIDR=$(terraform output -raw vpc_cidr)
+          SUBNET_ID=$(terraform output -raw subnet_id)
+          IPAM_ADDR=$(terraform output -raw ipam_subnet_address)
+          DNS_FQDN=$(terraform output -raw dns_record_fqdn)
+          DNS_VALUE=$(terraform output -raw dns_record_value)
+
+          echo "vpc_id=${VPC_ID}" >> $GITHUB_OUTPUT
+          echo "vpc_cidr=${VPC_CIDR}" >> $GITHUB_OUTPUT
+          echo "subnet_id=${SUBNET_ID}" >> $GITHUB_OUTPUT
+          echo "ipam_subnet_address=${IPAM_ADDR}" >> $GITHUB_OUTPUT
+          echo "dns_record_fqdn=${DNS_FQDN}" >> $GITHUB_OUTPUT
+          echo "dns_record_value=${DNS_VALUE}" >> $GITHUB_OUTPUT
+
+          echo ""
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  Phase Results                                             ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+          echo "🔷 Phase 1 — IPAM Allocation"
+          echo "   Subnet Address : ${IPAM_ADDR}"
+          echo "   Subnet ID      : ${SUBNET_ID}"
+          echo ""
+          echo "🔷 Phase 2 — VPC Provisioning"
+          echo "   VPC ID          : ${VPC_ID}"
+          echo "   VPC CIDR        : ${VPC_CIDR}"
+          echo ""
+          echo "🔷 Phase 3 — DNS Record"
+          echo "   FQDN            : ${DNS_FQDN}"
+          echo "   A Record Value  : ${DNS_VALUE}"
+          echo ""
+
+      # ── DNS Verification ──────────────────────────────────────────────
+      - name: "DNS Verification (UDDI → Route53 sync)"
+        id: dns_verify
+        env:
+          ROUTE53_HOSTED_ZONE_ID: ${{ secrets.ROUTE53_HOSTED_ZONE_ID }}
+        run: |
+          FQDN="${{ steps.outputs.outputs.dns_record_fqdn }}"
+          EXPECTED="${{ steps.outputs.outputs.dns_record_value }}"
+
+          echo "============================================"
+          echo "🔍 DNS VERIFICATION"
+          echo "============================================"
+          echo ""
+          echo "Record  : ${FQDN}"
+          echo "Expected: ${EXPECTED}"
+          echo ""
+          echo "⏳ Waiting 15 seconds for UDDI → Route53 sync..."
+          sleep 15
+          echo ""
+
+          # --- Dig against 3 public resolvers ---
+          echo "📡 Google DNS (8.8.8.8):"
+          DIG_GOOGLE=$(dig +short A "${FQDN}" @8.8.8.8 || true)
+          echo "   ${DIG_GOOGLE:-"(no answer yet)"}"
+          echo ""
+
+          echo "📡 Cloudflare DNS (1.1.1.1):"
+          DIG_CF=$(dig +short A "${FQDN}" @1.1.1.1 || true)
+          echo "   ${DIG_CF:-"(no answer yet)"}"
+          echo ""
+
+          echo "📡 Quad9 DNS (9.9.9.9):"
+          DIG_QUAD9=$(dig +short A "${FQDN}" @9.9.9.9 || true)
+          echo "   ${DIG_QUAD9:-"(no answer yet)"}"
+          echo ""
+
+          # --- Route53 API check ---
+          echo "☁️  Route53 API Check:"
+          R53_RESULT=""
+          if [ -n "${ROUTE53_HOSTED_ZONE_ID}" ]; then
+            R53_RESPONSE=$(aws route53 list-resource-record-sets \
+              --hosted-zone-id "${ROUTE53_HOSTED_ZONE_ID}" \
+              --query "ResourceRecordSets[?Name=='${FQDN}' && Type=='A']" \
+              --output json 2>/dev/null || echo "[]")
+
+            R53_COUNT=$(echo "${R53_RESPONSE}" | jq -r 'length' 2>/dev/null || echo 0)
+            if [ "${R53_COUNT}" -gt 0 ]; then
+              R53_RESULT=$(echo "${R53_RESPONSE}" | jq -r '.[0].ResourceRecords[0].Value' 2>/dev/null || echo "")
+              echo "   ✅ Found in Route53: ${R53_RESULT}"
+            else
+              echo "   ⏳ Not yet synced to Route53"
+            fi
+          else
+            echo "   ⚠️  ROUTE53_HOSTED_ZONE_ID not configured"
+          fi
+          echo ""
+
+          # --- Set verification outputs ---
+          echo "dig_google=${DIG_GOOGLE}" >> $GITHUB_OUTPUT
+          echo "dig_cloudflare=${DIG_CF}" >> $GITHUB_OUTPUT
+          echo "dig_quad9=${DIG_QUAD9}" >> $GITHUB_OUTPUT
+          echo "route53_result=${R53_RESULT}" >> $GITHUB_OUTPUT
+
+          # --- Summary ---
+          echo "============================================"
+          echo "📊 VERIFICATION SUMMARY"
+          echo "============================================"
+          verify_status() {
+            if [ "$1" = "$2" ] && [ -n "$1" ]; then echo "✅"; else echo "❌"; fi
+          }
+          echo "   Google   (8.8.8.8): $(verify_status "${DIG_GOOGLE}" "${EXPECTED}")"
+          echo "   Cloudflare (1.1.1.1): $(verify_status "${DIG_CF}" "${EXPECTED}")"
+          echo "   Quad9   (9.9.9.9): $(verify_status "${DIG_QUAD9}" "${EXPECTED}")"
+          echo "   Route53 API       : $(verify_status "${R53_RESULT}" "${EXPECTED}")"
+          echo "============================================"
+
+      # ── Save cache ─────────────────────────────────────────────────────
+      - name: Save Terraform state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            live/demos/combined/.terraform
+            live/demos/combined/.terraform.lock.hcl
+            live/demos/combined/terraform.tfstate
+            live/demos/combined/terraform.tfstate.backup
+          key: tfstate-combined-${{ inputs.vpc_name }}
+
+      # ── Job Summary ────────────────────────────────────────────────────
+      - name: Job Summary
+        if: always()
+        run: |
+          EXPECTED="${{ steps.outputs.outputs.dns_record_value }}"
+          DIG_GOOGLE="${{ steps.dns_verify.outputs.dig_google }}"
+          DIG_CF="${{ steps.dns_verify.outputs.dig_cloudflare }}"
+          DIG_QUAD9="${{ steps.dns_verify.outputs.dig_quad9 }}"
+          R53="${{ steps.dns_verify.outputs.route53_result }}"
+          DURATION="${{ steps.apply.outputs.apply_duration }}"
+
+          # Helper
+          check() { if [ "$1" = "$2" ] && [ -n "$1" ]; then echo "✅"; else echo "❌"; fi; }
+
+          cat >> $GITHUB_STEP_SUMMARY << 'HEADER'
+          # 🚀 Infoblox Universal DDI — Combined IPAM + VPC + DNS Demo
+
+          ## Automation Architecture
+
+          ```mermaid
+          graph LR
+              A[🔷 IPAM Allocation<br/>Next Available Subnet] --> B[🔷 VPC Provisioning<br/>AWS VPC + Internet GW]
+              B --> C[🔷 DNS Record<br/>A Record → First Usable IP]
+              C --> D[🔍 Verification<br/>dig + Route53 API]
+              style A fill:#0066cc,color:#fff
+              style B fill:#FF9900,color:#fff
+              style C fill:#00C853,color:#fff
+              style D fill:#7B1FA2,color:#fff
+          ```
+          HEADER
+
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+
+          ## ⚙️ Configuration
+
+          | Parameter | Value |
+          |-----------|-------|
+          | **VPC Name** | \`${{ inputs.vpc_name }}\` |
+          | **Subnet Size** | \`/${{ inputs.subnet_size }}\` |
+          | **AWS Region** | \`eu-central-1\` |
+          | **DNS Zone** | \`aws.gh.blox42.rocks\` |
+          | **Record Name** | \`combined-demo\` |
+          | **Executed** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+          | **Duration** | \`${DURATION}s\` |
+
+          ## 📊 Results
+
+          | Phase | Resource | Value |
+          |-------|----------|-------|
+          | **IPAM** | Subnet Address | \`${{ steps.outputs.outputs.ipam_subnet_address }}\` |
+          | **VPC** | VPC ID | \`${{ steps.outputs.outputs.vpc_id }}\` |
+          | **VPC** | VPC CIDR | \`${{ steps.outputs.outputs.vpc_cidr }}\` |
+          | **DNS** | FQDN | \`${{ steps.outputs.outputs.dns_record_fqdn }}\` |
+          | **DNS** | A Record IP | \`${{ steps.outputs.outputs.dns_record_value }}\` |
+
+          ## 🌐 DNS Verification
+
+          | Resolver | Result | Match |
+          |----------|--------|-------|
+          | Google DNS (8.8.8.8) | \`${DIG_GOOGLE:-"—"}\` | $(check "${DIG_GOOGLE}" "${EXPECTED}") |
+          | Cloudflare (1.1.1.1) | \`${DIG_CF:-"—"}\` | $(check "${DIG_CF}" "${EXPECTED}") |
+          | Quad9 (9.9.9.9) | \`${DIG_QUAD9:-"—"}\` | $(check "${DIG_QUAD9}" "${EXPECTED}") |
+          | Route53 API | \`${R53:-"—"}\` | $(check "${R53}" "${EXPECTED}") |
+
+          EOF
+
+          if [ -f tfoutputs.json ]; then
+            cat >> $GITHUB_STEP_SUMMARY << 'DETAILS'
+          <details>
+          <summary>Raw Terraform Outputs (JSON)</summary>
+
+          ```json
+          DETAILS
+            cat tfoutputs.json >> $GITHUB_STEP_SUMMARY
+            echo '```' >> $GITHUB_STEP_SUMMARY
+            echo '</details>' >> $GITHUB_STEP_SUMMARY
+            echo '' >> $GITHUB_STEP_SUMMARY
+          fi
+
+          cat >> $GITHUB_STEP_SUMMARY << 'FOOTER'
+
+          ---
+
+          ## 💡 Value Proposition
+
+          - **Unified IPAM + DNS** — Single source of truth for IP allocation and DNS across multi-cloud
+          - **Zero-Touch Automation** — IPAM allocates subnet → VPC uses it → DNS resolves it, all in one pipeline
+          - **UDDI-Native Sync** — DNS records created in UDDI automatically propagate to Route53 (no dual-write)
+          - **Consistency & Compliance** — Every VPC gets a deterministic, IPAM-backed CIDR and a DNS entry
+          - **Full Auditability** — Terraform state + UDDI audit trail + Route53 verification in one workflow
+
+          ---
+
+          **Powered by [Infoblox Universal DDI](https://www.infoblox.com/products/bloxone-ddi/)** | Terraform UDDI Provider | GitHub Actions
+          FOOTER
+
+  destroy:
+    name: "Destroy All Resources"
+    if: ${{ inputs.action == 'destroy' }}
+    runs-on: ubuntu-latest
+    environment: dev
+    defaults:
+      run:
+        working-directory: live/demos/combined
+    env:
+      BLOXONE_HOST: ${{ vars.BLOXONE_HOST }}
+      BLOXONE_API_KEY: ${{ secrets.BLOXONE_API_KEY }}
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      AWS_REGION: ${{ secrets.AWS_REGION }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/combined/.terraform
+            live/demos/combined/.terraform.lock.hcl
+            live/demos/combined/terraform.tfstate
+            live/demos/combined/terraform.tfstate.backup
+          key: tfstate-combined-${{ inputs.vpc_name }}
+
+      - name: Terraform Init
+        run: terraform init -input=false -no-color
+
+      - name: Terraform Destroy
+        run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  Destroying combined demo: ${{ inputs.vpc_name }}           ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          echo ""
+
+          terraform destroy -input=false -auto-approve -no-color \
+            -var="bloxone_host=${BLOXONE_HOST:-https://csp.infoblox.com}" \
+            -var="bloxone_api_key=${BLOXONE_API_KEY}" \
+            -var="vpc_name=${{ inputs.vpc_name }}" \
+            -var="subnet_size=${{ inputs.subnet_size }}" \
+            -var="aws_block_id=${{ secrets.AWS_BLOCK_ID }}" \
+            -var="ipam_space_id=${{ secrets.IPAM_SPACE_ID }}"
+
+          echo ""
+          echo "✅ All resources destroyed."
+
+      - name: Save Terraform state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            live/demos/combined/.terraform
+            live/demos/combined/.terraform.lock.hcl
+            live/demos/combined/terraform.tfstate
+            live/demos/combined/terraform.tfstate.backup
+          key: tfstate-combined-${{ inputs.vpc_name }}
+
+      - name: Destroy Summary
+        run: |
+          cat >> $GITHUB_STEP_SUMMARY << EOF
+          # 🗑️ UDDI Combined Demo — Resources Destroyed
+
+          | Parameter | Value |
+          |-----------|-------|
+          | **VPC Name** | \`${{ inputs.vpc_name }}\` |
+          | **Action** | \`destroy\` |
+          | **Executed** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
+
+          All IPAM reservations, VPC resources, and DNS records have been removed.
+          EOF

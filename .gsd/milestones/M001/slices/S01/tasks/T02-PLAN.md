@@ -86,3 +86,10 @@ Create the GitHub Actions workflow that wires the T01 Terraform root into a trig
 ## Expected Output
 
 - `.github/workflows/combined-demo.yml` — Complete workflow file ready for live execution on GitHub Actions, with deploy and destroy paths, narrated logging, DNS verification, and professional job summary
+
+## Observability Impact
+
+- **New signals**: Echo-based phase narration banners (`🔷 Phase 1/2/3`) in GitHub Actions logs with `date +%s` timing
+- **Inspection surface**: GitHub Actions job summary — Mermaid 3-stage diagram, config table, results table, DNS verification table with ✅/❌ per resolver
+- **Failure visibility**: Each Terraform command runs with `-no-color`; DNS verification shows expected vs actual; Route53 API check reports sync status; destroy path has explicit narration
+- **Diagnostic commands**: Trigger workflow manually via `gh workflow run combined-demo.yml`; inspect with `gh run view <id>` and `gh run view <id> --log`

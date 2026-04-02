@@ -54,7 +54,7 @@
   - Verify: `cd live/demos/combined && terraform init && terraform validate` exits 0
   - Done when: Terraform validates cleanly and outputs cover everything the workflow will need (VPC CIDR, DNS FQDN, record IP)
 
-- [ ] **T02: Create GitHub Actions workflow with narration, verification, and job summary** `est:1h`
+- [x] **T02: Create GitHub Actions workflow with narration, verification, and job summary** `est:1h`
   - Why: The workflow is the SE-facing artifact — it wires the Terraform root into a triggerable demo with narrated logs, DNS verification, and a professional summary. Also performs coherence verification against T01's variables/outputs.
   - Files: `.github/workflows/combined-demo.yml`
   - Do: Create workflow with `workflow_dispatch` inputs (vpc_name, subnet_size as choice, action as choice deploy/destroy). Structure: checkout → setup terraform 1.6.6 → cache restore (key: `tfstate-combined-${{ inputs.vpc_name }}`) → init → narrated plan/apply with phase timing (IPAM, VPC, DNS) → extract Terraform outputs → DNS verification (sleep 15 + dig against 8.8.8.8, 1.1.1.1, 9.9.9.9 + Route53 API via `aws route53 list-resource-record-sets`) → generate job summary with Mermaid 3-stage diagram, config table, verification results, value proposition footer → destroy path. Use `dev` environment for secrets. Cross-reference all `-var` flags against `variables.tf`, all step output references against step IDs. Follow `run-demo.yml` patterns for summary generation and verification. Skill note: load `github-workflows` skill for workflow syntax reference.
