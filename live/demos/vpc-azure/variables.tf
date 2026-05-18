@@ -33,6 +33,11 @@ variable "subnet_size" {
 variable "azure_location" {
   description = "Azure location for VNet"
   type        = string
+
+  validation {
+    condition     = contains(["westeurope", "eastus", "westus2", "southeastasia"], var.azure_location)
+    error_message = "Azure location must be one of: westeurope, eastus, westus2, southeastasia."
+  }
 }
 
 variable "azure_block_id" {
@@ -43,10 +48,4 @@ variable "azure_block_id" {
 variable "ipam_space_id" {
   description = "UDDI IPAM Space ID"
   type        = string
-}
-
-  validation {
-    condition     = contains(["westeurope", "eastus", "westus2", "southeastasia"], var.azure_location)
-    error_message = "Azure location must be one of: westeurope, eastus, westus2, southeastasia."
-  }
 }
