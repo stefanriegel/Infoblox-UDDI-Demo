@@ -58,12 +58,18 @@ resource "azurerm_resource_group" "main" {
   }
 }
 
+locals {
+  vnet_cidr    = "${replace(trimspace(data.bloxone_ipam_next_available_subnets.vnet_subnet.results[0]), "\"", "")}/${var.subnet_size}"
+  subnet_names = ["web", "app", "data"]
+  subnet_cidrs = [for i in range(length(local.subnet_names)) : cidrsubnet(local.vnet_cidr, 2, i)]
+}
+
 # Create Azure VNet with UDDI-allocated CIDR
 resource "azurerm_virtual_network" "main" {
   name                = var.vnet_name
   location            = azurerm_resource_group.main.location
   resource_group_name = azurerm_resource_group.main.name
-  address_space       = ["${replace(trimspace(data.bloxone_ipam_next_available_subnets.vnet_subnet.results[0]), "\"", "")}/${var.subnet_size}"]
+  address_space       = [local.vnet_cidr]
 
   tags = {
     demo       = "true"
@@ -71,6 +77,16 @@ resource "azurerm_virtual_network" "main" {
     managed_by = "terraform"
     uddi_ipam  = "true"
   }
+}
+
+# Create 3 Subnets within the VNet (web / app / data tiers)
+resource "azurerm_subnet" "main" {
+  for_each = { for idx, name in local.subnet_names : name => local.subnet_cidrs[idx] }
+
+  name                 = "snet-${var.vnet_name}-${each.key}"
+  resource_group_name  = azurerm_resource_group.main.name
+  virtual_network_name = azurerm_virtual_network.main.name
+  address_prefixes     = [each.value]
 }
 
 # Outputs
@@ -85,8 +101,18 @@ output "vnet_name" {
 }
 
 output "vnet_cidr" {
-  value       = "${replace(trimspace(data.bloxone_ipam_next_available_subnets.vnet_subnet.results[0]), "\"", "")}/${var.subnet_size}"
+  value       = local.vnet_cidr
   description = "CIDR block allocated by UDDI IPAM"
+}
+
+output "subnets" {
+  value = {
+    for k, s in azurerm_subnet.main : k => {
+      id   = s.id
+      cidr = s.address_prefixes[0]
+    }
+  }
+  description = "Azure Subnets created within the VNet (web/app/data)"
 }
 
 output "resource_group_name" {
