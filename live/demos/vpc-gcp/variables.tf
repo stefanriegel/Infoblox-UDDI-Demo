@@ -1,11 +1,11 @@
 variable "bloxone_host" {
-  description = "Infoblox BloxOne CSP URL"
+  description = "Infoblox UDDI API host (CSP URL)"
   type        = string
   default     = "https://csp.infoblox.com"
 }
 
 variable "bloxone_api_key" {
-  description = "Infoblox BloxOne API Key"
+  description = "Infoblox UDDI API key (sensitive; provide via environment/secret)"
   type        = string
   sensitive   = true
 }
@@ -26,12 +26,13 @@ variable "vpc_name" {
 }
 
 variable "subnet_size" {
-  description = "Subnet size (CIDR prefix length, e.g., 24 for /24)"
+  description = "Subnet size (CIDR prefix length, e.g. 24 for /24)"
   type        = number
+  default     = 24
 
   validation {
     condition     = var.subnet_size >= 16 && var.subnet_size <= 28
-    error_message = "Subnet size must be between 16 and 28."
+    error_message = "Subnet size must be between /16 and /28."
   }
 }
 

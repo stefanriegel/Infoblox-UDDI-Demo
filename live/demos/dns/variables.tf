@@ -1,11 +1,11 @@
 variable "bloxone_host" {
-  description = "BloxOne/UDDI API host"
+  description = "Infoblox UDDI API host (CSP URL)"
   type        = string
   default     = "https://csp.infoblox.com"
 }
 
 variable "bloxone_api_key" {
-  description = "BloxOne/UDDI API key (sensitive; provide via environment/secret)"
+  description = "Infoblox UDDI API key (sensitive; provide via environment/secret)"
   type        = string
   sensitive   = true
 }
@@ -46,10 +46,4 @@ variable "ttl" {
   description = "TTL in seconds"
   type        = number
   default     = 120
-}
-
-variable "orange_cloud" {
-  description = "Enable Cloudflare Orange Cloud (proxy) for A/AAAA/CNAME records"
-  type        = bool
-  default     = false
 }
