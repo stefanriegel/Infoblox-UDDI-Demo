@@ -1,0 +1,113 @@
+name: "DNS provider record"
+description: >-
+  Query the selected downstream DNS provider (Cloudflare/Azure/Route53/GCP) for
+  the demo record and normalize it to one dns-record.json contract — the cloud-DNS
+  sibling of the uddi action. Emits the per-provider DASHBOARD INFO narration to
+  the run log (like uddi.sh); the $GITHUB_STEP_SUMMARY rendering stays in the
+  workflow and reads dns-record.json. See docs/adr/0003-workflow-narration-is-demo-ui.md
+  and CONTEXT.md ("DNS provider record").
+
+inputs:
+  dns-provider:
+    description: "Human provider label: Cloudflare | Azure DNS | Route53 | Cloud DNS."
+    required: true
+  zone-fqdn:
+    description: "Authoritative zone FQDN with trailing dot (from set_zone)."
+    required: true
+  record-name:
+    description: "Record name within the zone."
+    required: false
+    default: ""
+  record-type:
+    description: "A | AAAA | TXT | CNAME."
+    required: true
+  output-dir:
+    description: "Where to write dns-record.json and the raw <provider>-response.json."
+    required: false
+    default: "live/demos/dns"
+  cf-api-token:
+    description: "Cloudflare API token."
+    required: false
+    default: ""
+  cf-zone-id:
+    description: "Cloudflare zone id (auto-discovered when empty)."
+    required: false
+    default: ""
+  arm-client-id:
+    description: "Azure service-principal client id."
+    required: false
+    default: ""
+  arm-client-secret:
+    description: "Azure service-principal client secret."
+    required: false
+    default: ""
+  arm-subscription-id:
+    description: "Azure subscription id."
+    required: false
+    default: ""
+  arm-tenant-id:
+    description: "Azure tenant id."
+    required: false
+    default: ""
+  azure-dns-resource-group:
+    description: "Azure DNS resource group."
+    required: false
+    default: ""
+  aws-access-key-id:
+    description: "AWS access key id."
+    required: false
+    default: ""
+  aws-secret-access-key:
+    description: "AWS secret access key."
+    required: false
+    default: ""
+  aws-region:
+    description: "AWS region (default us-east-1)."
+    required: false
+    default: ""
+  route53-hosted-zone-id:
+    description: "Route53 hosted zone id."
+    required: false
+    default: ""
+  gcp-credentials:
+    description: "GCP service-account key JSON."
+    required: false
+    default: ""
+  gcp-project-id:
+    description: "GCP project id."
+    required: false
+    default: ""
+
+outputs:
+  found:
+    description: "'true' when the record was found at the provider."
+    value: ${{ steps.run.outputs.found }}
+  provider:
+    description: "Canonical provider key (cloudflare|azure|route53|gcp)."
+    value: ${{ steps.run.outputs.provider }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        DNS_PROVIDER: ${{ inputs.dns-provider }}
+        ZONE_FQDN: ${{ inputs.zone-fqdn }}
+        RECORD_NAME: ${{ inputs.record-name }}
+        RECORD_TYPE: ${{ inputs.record-type }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        CF_API_TOKEN: ${{ inputs.cf-api-token }}
+        CF_ZONE_ID: ${{ inputs.cf-zone-id }}
+        ARM_CLIENT_ID: ${{ inputs.arm-client-id }}
+        ARM_CLIENT_SECRET: ${{ inputs.arm-client-secret }}
+        ARM_SUBSCRIPTION_ID: ${{ inputs.arm-subscription-id }}
+        ARM_TENANT_ID: ${{ inputs.arm-tenant-id }}
+        AZURE_DNS_RESOURCE_GROUP: ${{ inputs.azure-dns-resource-group }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
+        AWS_REGION: ${{ inputs.aws-region }}
+        ROUTE53_HOSTED_ZONE_ID: ${{ inputs.route53-hosted-zone-id }}
+        GOOGLE_CREDENTIALS: ${{ inputs.gcp-credentials }}
+        GCP_PROJECT_ID: ${{ inputs.gcp-project-id }}
+      run: bash "${GITHUB_ACTION_PATH}/query.sh"
