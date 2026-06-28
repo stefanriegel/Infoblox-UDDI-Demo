@@ -330,25 +330,9 @@ jobs:
           else
             echo "| **Action** | 🗑️ \`Destroy\` |" >> $GITHUB_STEP_SUMMARY
           fi
-          # Display provider and zone (avoid GitHub secret masking by using literal strings)
-          case "${{ inputs.dns_provider }}" in
-            "Cloudflare"*)
-              echo "| **DNS Provider** | \`Cloudflare\` |" >> $GITHUB_STEP_SUMMARY
-              echo "| **Zone** | \`virtualife.pro\` |" >> $GITHUB_STEP_SUMMARY
-              ;;
-            "Azure DNS"*)
-              echo "| **DNS Provider** | \`Azure DNS\` |" >> $GITHUB_STEP_SUMMARY
-              echo "| **Zone** | \`az.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
-              ;;
-            "Route53"*)
-              echo "| **DNS Provider** | \`Route53\` |" >> $GITHUB_STEP_SUMMARY
-              echo "| **Zone** | \`aws.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
-              ;;
-            "Cloud DNS"*)
-              echo "| **DNS Provider** | \`Cloud DNS\` |" >> $GITHUB_STEP_SUMMARY
-              echo "| **Zone** | \`gcp.gh.blox42.rocks\` |" >> $GITHUB_STEP_SUMMARY
-              ;;
-          esac
+          # Provider and zone come from the single source of truth (set_zone).
+          echo "| **DNS Provider** | \`${{ steps.set_zone.outputs.provider_name }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Zone** | \`$(echo "${{ steps.set_zone.outputs.zone_fqdn }}" | sed 's/\.$//')\` |" >> $GITHUB_STEP_SUMMARY
           
           echo "| **Record Name** | \`${{ inputs.record_name }}\` |" >> $GITHUB_STEP_SUMMARY
           echo "| **Type** | \`${{ inputs.record_type }}\` |" >> $GITHUB_STEP_SUMMARY
@@ -460,8 +444,7 @@ jobs:
 
               if [ "${REC_FOUND}" == "true" ]; then
                 RECORD_ID=$(jq -r '.id' dns-record.json)
-                # Construct FQDN manually to avoid GitHub secret masking
-                AZURE_FQDN="${{ inputs.record_name }}.az.gh.blox42.rocks."
+                AZURE_FQDN="${{ inputs.record_name }}.${{ steps.set_zone.outputs.zone_fqdn }}"
                 AZURE_TTL=$(jq -r '.ttl' dns-record.json)
                 AZURE_PROVISIONING_STATE=$(jq -r '.provisioning_state' dns-record.json)
                 AZURE_RECORDS=$(jq -r '.target' dns-record.json)
@@ -499,8 +482,7 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
 
               if [ "${REC_FOUND}" == "true" ]; then
-                # Construct FQDN manually to avoid GitHub secret masking
-                ROUTE53_FQDN="${{ inputs.record_name }}.aws.gh.blox42.rocks."
+                ROUTE53_FQDN="${{ inputs.record_name }}.${{ steps.set_zone.outputs.zone_fqdn }}"
                 ROUTE53_TYPE=$(jq -r '.type' dns-record.json)
                 ROUTE53_TTL=$(jq -r '.ttl' dns-record.json)
                 ROUTE53_VALUES=$(jq -r '.target' dns-record.json)
@@ -536,8 +518,7 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
 
               if [ "${REC_FOUND}" == "true" ]; then
-                # Construct FQDN manually to avoid GitHub secret masking
-                GCP_FQDN="${{ inputs.record_name }}.gcp.gh.blox42.rocks."
+                GCP_FQDN="${{ inputs.record_name }}.${{ steps.set_zone.outputs.zone_fqdn }}"
                 GCP_TYPE=$(jq -r '.type' dns-record.json)
                 GCP_TTL=$(jq -r '.ttl' dns-record.json)
                 GCP_VALUES=$(jq -r '.target' dns-record.json)
