@@ -162,6 +162,21 @@ jobs:
             -var="record_value=${{ inputs.record_value }}" \
             -var="ttl=${{ inputs.ttl }}"
 
+      - name: Wait for UDDI sync
+        if: ${{ inputs.action == 'apply' }}
+        run: |
+          echo "⏳ Waiting 10 seconds for UDDI → downstream sync..."
+          sleep 10
+
+      - name: Resolve across public DNS
+        if: ${{ inputs.action == 'apply' }}
+        id: resolvers
+        uses: ./.github/actions/dns-resolvers
+        with:
+          fqdn: "${{ inputs.record_name }}.${{ steps.set_zone.outputs.zone_fqdn }}"
+          type: ${{ inputs.record_type }}
+          output-dir: live/demos/dns
+
       - name: DNS Verification & Provider Status
         if: ${{ inputs.action == 'apply' }}
         env:
@@ -186,55 +201,15 @@ jobs:
           echo "╚══════════════════════════════════════════════════════════════╝"
           echo ""
           
-          # Wait for UDDI to Cloudflare sync
-          echo "⏳ Waiting 10 seconds for UDDI → Cloudflare sync..."
-          sleep 10
-          echo ""
-          
-          # Construct FQDN
+          # Construct FQDN (used by the provider-dashboard queries below)
           ZONE_FQDN="${{ steps.set_zone.outputs.zone_fqdn }}"
           FQDN="${{ inputs.record_name }}.${ZONE_FQDN}"
           FQDN="${FQDN%.}."
           TYPE="${{ inputs.record_type }}"
-          
-          echo "============================================"
-          echo "🔍 DNS VERIFICATION"
-          echo "============================================"
-          echo ""
-          echo "Record: ${FQDN}"
-          echo "Type: ${TYPE}"
-          echo ""
-          
-          # Dig from multiple nameservers
-          echo "📡 Querying Google DNS (8.8.8.8)..."
-          dig +nocmd +noall +answer -t "${TYPE}" "${FQDN}" @8.8.8.8 | tee dig-google.txt || echo "(no answer)" | tee dig-google.txt
-          if [ ! -s dig-google.txt ]; then
-            echo "(no answer yet - DNS propagation in progress)" | tee dig-google.txt
-          fi
-          cat dig-google.txt
-          echo ""
-          
-          echo "📡 Querying Cloudflare DNS (1.1.1.1)..."
-          dig +nocmd +noall +answer -t "${TYPE}" "${FQDN}" @1.1.1.1 | tee dig-cloudflare.txt || echo "(no answer)" | tee dig-cloudflare.txt
-          if [ ! -s dig-cloudflare.txt ]; then
-            echo "(no answer yet - DNS propagation in progress)" | tee dig-cloudflare.txt
-          fi
-          cat dig-cloudflare.txt
-          echo ""
-          
-          echo "📡 Querying Quad9 DNS (9.9.9.9)..."
-          dig +nocmd +noall +answer -t "${TYPE}" "${FQDN}" @9.9.9.9 | tee dig-quad9.txt || echo "(no answer)" | tee dig-quad9.txt
-          if [ ! -s dig-quad9.txt ]; then
-            echo "(no answer yet - DNS propagation in progress)" | tee dig-quad9.txt
-          fi
-          cat dig-quad9.txt
-          echo ""
-          
-          # Full dig for debugging
-          echo "🔬 Full DNS Query Details:"
-          dig "${FQDN}" "${TYPE}" @8.8.8.8 | tee dig-full.txt
-          echo ""
-          
+
+          # Public-resolver checks (dig × Google/Cloudflare/Quad9) ran in the prior
+          # "Resolve across public DNS" step, which wrote dig-*.txt here for the summary.
+
           # Query Cloudflare API if token is available
           if [ -n "${CF_API_TOKEN}" ]; then
             echo "============================================"

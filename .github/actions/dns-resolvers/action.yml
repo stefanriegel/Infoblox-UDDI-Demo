@@ -1,0 +1,49 @@
+name: "DNS resolver check"
+description: >-
+  Query a record against the public resolvers (Google / Cloudflare / Quad9) once.
+  Prints verbose narration, optionally writes dig-<label>.txt files for a caller's
+  job summary, and exposes the short answers as outputs. Shared by run-demo and
+  combined-demo so the resolver set and the empty-answer fallback live in one place.
+
+inputs:
+  fqdn:
+    description: "Fully-qualified record name to resolve (trailing dot optional)."
+    required: true
+  type:
+    description: "DNS record type."
+    required: false
+    default: "A"
+  output-dir:
+    description: "If set, write dig-<label>.txt (and dig-full.txt) here for a job summary to read."
+    required: false
+    default: ""
+  resolvers:
+    description: "Space-separated label:ip pairs."
+    required: false
+    default: "google:8.8.8.8 cloudflare:1.1.1.1 quad9:9.9.9.9"
+
+outputs:
+  google:
+    description: "Short answer from Google DNS."
+    value: ${{ steps.run.outputs.google }}
+  cloudflare:
+    description: "Short answer from Cloudflare DNS."
+    value: ${{ steps.run.outputs.cloudflare }}
+  quad9:
+    description: "Short answer from Quad9 DNS."
+    value: ${{ steps.run.outputs.quad9 }}
+  answers:
+    description: "JSON map of label -> short answer for every resolver."
+    value: ${{ steps.run.outputs.answers }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        FQDN: ${{ inputs.fqdn }}
+        RECORD_TYPE: ${{ inputs.type }}
+        OUTPUT_DIR: ${{ inputs.output-dir }}
+        RESOLVERS: ${{ inputs.resolvers }}
+      run: bash "${GITHUB_ACTION_PATH}/dns.sh"

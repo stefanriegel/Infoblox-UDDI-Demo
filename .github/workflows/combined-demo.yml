@@ -152,6 +152,18 @@ jobs:
           echo ""
 
       # ── DNS Verification ──────────────────────────────────────────────
+      - name: Wait for UDDI sync
+        run: |
+          echo "⏳ Waiting 15 seconds for UDDI → Route53 sync..."
+          sleep 15
+
+      - name: Resolve across public DNS
+        id: resolvers
+        uses: ./.github/actions/dns-resolvers
+        with:
+          fqdn: ${{ steps.outputs.outputs.dns_record_fqdn }}
+          type: "A"
+
       - name: "DNS Verification (UDDI → Route53 sync)"
         id: dns_verify
         env:
@@ -167,25 +179,10 @@ jobs:
           echo "Record  : ${FQDN}"
           echo "Expected: ${EXPECTED}"
           echo ""
-          echo "⏳ Waiting 15 seconds for UDDI → Route53 sync..."
-          sleep 15
-          echo ""
-
-          # --- Dig against 3 public resolvers ---
-          echo "📡 Google DNS (8.8.8.8):"
-          DIG_GOOGLE=$(dig +short A "${FQDN}" @8.8.8.8 || true)
-          echo "   ${DIG_GOOGLE:-"(no answer yet)"}"
-          echo ""
-
-          echo "📡 Cloudflare DNS (1.1.1.1):"
-          DIG_CF=$(dig +short A "${FQDN}" @1.1.1.1 || true)
-          echo "   ${DIG_CF:-"(no answer yet)"}"
-          echo ""
-
-          echo "📡 Quad9 DNS (9.9.9.9):"
-          DIG_QUAD9=$(dig +short A "${FQDN}" @9.9.9.9 || true)
-          echo "   ${DIG_QUAD9:-"(no answer yet)"}"
-          echo ""
+          # Public-resolver checks ran in the prior "Resolve across public DNS" step.
+          DIG_GOOGLE="${{ steps.resolvers.outputs.google }}"
+          DIG_CF="${{ steps.resolvers.outputs.cloudflare }}"
+          DIG_QUAD9="${{ steps.resolvers.outputs.quad9 }}"
 
           # --- Route53 API check ---
           echo "☁️  Route53 API Check:"
