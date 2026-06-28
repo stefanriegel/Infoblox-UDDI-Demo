@@ -1,0 +1,94 @@
+name: "Cloud cleanup"
+description: >-
+  Find and tear down demo VPC/VNet resources in AWS/Azure/GCP behind one
+  find/delete interface — the cloud-side mirror of the uddi action. Each cloud
+  adapter owns its own discovery filter (the tag-casing contract, ADR-0002) and
+  its dependency-ordered teardown. Plumbing only — the calling workflow keeps the
+  presented job summary. See docs/adr/0003-workflow-narration-is-demo-ui.md and
+  CONTEXT.md ("Cloud-cleanup").
+
+inputs:
+  operation:
+    description: "find | delete"
+    required: true
+  cloud:
+    description: "aws | azure | gcp"
+    required: true
+  resources:
+    description: "JSON array of descriptors to delete (delete operation)."
+    required: false
+    default: "[]"
+  aws-regions:
+    description: "Space-separated AWS regions to scan (aws)."
+    required: false
+    default: "eu-central-1 us-east-1 us-west-2 ap-southeast-1"
+  aws-access-key-id:
+    description: "AWS access key id."
+    required: false
+    default: ""
+  aws-secret-access-key:
+    description: "AWS secret access key."
+    required: false
+    default: ""
+  arm-client-id:
+    description: "Azure service-principal client id."
+    required: false
+    default: ""
+  arm-client-secret:
+    description: "Azure service-principal client secret."
+    required: false
+    default: ""
+  arm-subscription-id:
+    description: "Azure subscription id."
+    required: false
+    default: ""
+  arm-tenant-id:
+    description: "Azure tenant id."
+    required: false
+    default: ""
+  gcp-credentials:
+    description: "GCP service-account key JSON."
+    required: false
+    default: ""
+  gcp-project-id:
+    description: "GCP project id."
+    required: false
+    default: ""
+
+outputs:
+  result:
+    description: "JSON array of matched demo resources (find)."
+    value: ${{ steps.run.outputs.result }}
+  count:
+    description: "Number of matched resources (find)."
+    value: ${{ steps.run.outputs.count }}
+  has:
+    description: "'true' when count > 0 (find)."
+    value: ${{ steps.run.outputs.has }}
+  deleted:
+    description: "Number torn down (delete)."
+    value: ${{ steps.run.outputs.deleted }}
+  failed:
+    description: "Number of failed teardowns (delete)."
+    value: ${{ steps.run.outputs.failed }}
+  duration:
+    description: "Teardown duration in seconds (delete)."
+    value: ${{ steps.run.outputs.duration }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        AWS_REGIONS: ${{ inputs.aws-regions }}
+        AWS_ACCESS_KEY_ID: ${{ inputs.aws-access-key-id }}
+        AWS_SECRET_ACCESS_KEY: ${{ inputs.aws-secret-access-key }}
+        ARM_CLIENT_ID: ${{ inputs.arm-client-id }}
+        ARM_CLIENT_SECRET: ${{ inputs.arm-client-secret }}
+        ARM_SUBSCRIPTION_ID: ${{ inputs.arm-subscription-id }}
+        ARM_TENANT_ID: ${{ inputs.arm-tenant-id }}
+        GOOGLE_CREDENTIALS: ${{ inputs.gcp-credentials }}
+        GCP_PROJECT_ID: ${{ inputs.gcp-project-id }}
+        CLOUD_RESOURCES: ${{ inputs.resources }}
+      run: bash "${GITHUB_ACTION_PATH}/cleanup.sh" "${{ inputs.operation }}" "${{ inputs.cloud }}"

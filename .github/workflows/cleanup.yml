@@ -188,169 +188,72 @@ jobs:
           host: ${{ env.BLOXONE_HOST }}
           api-key: ${{ env.BLOXONE_API_KEY }}
 
-      - name: Cleanup AWS VPCs via AWS CLI
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-        run: |
-          set +e
-          
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  🧹 Phase 2: Cleaning Up AWS VPCs                           ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "🔍 Finding AWS VPCs with Demo=true tag..."
-          
-          # Get all regions to search (search common regions)
-          REGIONS="eu-central-1 us-east-1 us-west-2 ap-southeast-1"
-          
-          for REGION in ${REGIONS}; do
-            echo "Checking region: ${REGION}"
-            
-            # Find VPCs with ManagedBy=terraform tag (more reliable than Demo tag)
-            VPC_IDS=$(aws ec2 describe-vpcs \
-              --region ${REGION} \
-              --filters "Name=tag:ManagedBy,Values=terraform" "Name=tag:Demo,Values=true" \
-              --query 'Vpcs[].VpcId' \
-              --output text 2>/dev/null)
-            
-            if [ -z "${VPC_IDS}" ]; then
-              continue
-            fi
-            
-            for VPC_ID in ${VPC_IDS}; do
-              echo "🗑️ Deleting VPC: ${VPC_ID} in ${REGION}"
-              
-              # Get VPC name for logging
-              VPC_NAME=$(aws ec2 describe-vpcs \
-                --region ${REGION} \
-                --vpc-ids ${VPC_ID} \
-                --query 'Vpcs[0].Tags[?Key==`Name`].Value' \
-                --output text 2>/dev/null)
-              
-              echo "  Name: ${VPC_NAME}"
-              
-              # Delete Internet Gateways
-              IGW_IDS=$(aws ec2 describe-internet-gateways \
-                --region ${REGION} \
-                --filters "Name=attachment.vpc-id,Values=${VPC_ID}" \
-                --query 'InternetGateways[].InternetGatewayId' \
-                --output text 2>/dev/null)
-              
-              for IGW_ID in ${IGW_IDS}; do
-                echo "  Detaching and deleting IGW: ${IGW_ID}"
-                aws ec2 detach-internet-gateway \
-                  --region ${REGION} \
-                  --internet-gateway-id ${IGW_ID} \
-                  --vpc-id ${VPC_ID} 2>/dev/null || true
-                aws ec2 delete-internet-gateway \
-                  --region ${REGION} \
-                  --internet-gateway-id ${IGW_ID} 2>/dev/null || true
-              done
-              
-              # Delete VPC
-              echo "  Deleting VPC: ${VPC_ID}"
-              aws ec2 delete-vpc \
-                --region ${REGION} \
-                --vpc-id ${VPC_ID} 2>/dev/null && echo "  ✅ VPC deleted" || echo "  ⚠️ VPC deletion failed"
-              
-              echo ""
-            done
-          done
+      - name: Find demo AWS VPCs
+        id: find_aws
+        uses: ./.github/actions/cloud-cleanup
+        with:
+          operation: find
+          cloud: aws
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Cleanup Azure VNets via Azure CLI
-        env:
-          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
-          ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-          ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
-          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-        run: |
-          set +e
-          
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  🧹 Phase 3: Cleaning Up Azure VNets                        ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "🔍 Finding Azure Resource Groups with demo=true tag..."
-          
-          # Login to Azure
-          az login --service-principal \
-            --username ${ARM_CLIENT_ID} \
-            --password ${ARM_CLIENT_SECRET} \
-            --tenant ${ARM_TENANT_ID} --output none 2>/dev/null || true
-          
-          az account set --subscription ${ARM_SUBSCRIPTION_ID} 2>/dev/null || true
-          
-          # Find resource groups with demo=true tag
-          RG_NAMES=$(az group list \
-            --tag demo=true \
-            --query '[].name' \
-            --output tsv 2>/dev/null)
-          
-          if [ -z "${RG_NAMES}" ]; then
-            echo "No Azure Resource Groups with demo=true found"
-          else
-            for RG_NAME in ${RG_NAMES}; do
-              echo "🗑️ Deleting Resource Group: ${RG_NAME}"
-              az group delete \
-                --name ${RG_NAME} \
-                --yes \
-                --no-wait 2>/dev/null && echo "  ✅ Deletion initiated" || echo "  ⚠️ Deletion failed"
-            done
-          fi
+      - name: Delete demo AWS VPCs
+        if: steps.find_aws.outputs.has == 'true'
+        id: delete_aws
+        continue-on-error: true
+        uses: ./.github/actions/cloud-cleanup
+        with:
+          operation: delete
+          cloud: aws
+          resources: ${{ steps.find_aws.outputs.result }}
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Cleanup GCP VPCs via gcloud CLI
-        env:
-          GOOGLE_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
-          GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
-        run: |
-          set +e
-          
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  🧹 Phase 4: Cleaning Up GCP VPCs                           ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "🔍 Finding GCP VPCs with description containing 'UDDI'..."
-          
-          # Authenticate with GCP
-          echo "${GOOGLE_CREDENTIALS}" | gcloud auth activate-service-account --key-file=- 2>/dev/null || true
-          gcloud config set project ${GCP_PROJECT_ID} 2>/dev/null || true
-          
-          # List all VPC networks and filter by description
-          VPC_NAMES=$(gcloud compute networks list \
-            --filter="description:UDDI" \
-            --format="value(name)" 2>/dev/null)
-          
-          if [ -z "${VPC_NAMES}" ]; then
-            echo "No GCP VPCs with UDDI description found"
-          else
-            for VPC_NAME in ${VPC_NAMES}; do
-              echo "🗑️ Deleting VPC: ${VPC_NAME}"
-              
-              # Delete all subnets first
-              SUBNETS=$(gcloud compute networks subnets list \
-                --network=${VPC_NAME} \
-                --format="value(name,region)" 2>/dev/null)
-              
-              while read -r SUBNET_INFO; do
-                SUBNET_NAME=$(echo ${SUBNET_INFO} | awk '{print $1}')
-                SUBNET_REGION=$(echo ${SUBNET_INFO} | awk '{print $2}')
-                if [ -n "${SUBNET_NAME}" ]; then
-                  echo "  Deleting subnet: ${SUBNET_NAME}"
-                  gcloud compute networks subnets delete ${SUBNET_NAME} \
-                    --region=${SUBNET_REGION} \
-                    --quiet 2>/dev/null || true
-                fi
-              done <<< "${SUBNETS}"
-              
-              # Delete VPC
-              echo "  Deleting VPC network: ${VPC_NAME}"
-              gcloud compute networks delete ${VPC_NAME} \
-                --quiet 2>/dev/null && echo "  ✅ VPC deleted" || echo "  ⚠️ VPC deletion failed"
-              
-              echo ""
-            done
-          fi
+      - name: Find demo Azure VNets
+        id: find_azure
+        uses: ./.github/actions/cloud-cleanup
+        with:
+          operation: find
+          cloud: azure
+          arm-client-id: ${{ secrets.ARM_CLIENT_ID }}
+          arm-client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          arm-subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          arm-tenant-id: ${{ secrets.ARM_TENANT_ID }}
+
+      - name: Delete demo Azure VNets
+        if: steps.find_azure.outputs.has == 'true'
+        id: delete_azure
+        continue-on-error: true
+        uses: ./.github/actions/cloud-cleanup
+        with:
+          operation: delete
+          cloud: azure
+          resources: ${{ steps.find_azure.outputs.result }}
+          arm-client-id: ${{ secrets.ARM_CLIENT_ID }}
+          arm-client-secret: ${{ secrets.ARM_CLIENT_SECRET }}
+          arm-subscription-id: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+          arm-tenant-id: ${{ secrets.ARM_TENANT_ID }}
+
+      - name: Find demo GCP VPCs
+        id: find_gcp
+        uses: ./.github/actions/cloud-cleanup
+        with:
+          operation: find
+          cloud: gcp
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          gcp-project-id: ${{ secrets.GCP_PROJECT_ID }}
+
+      - name: Delete demo GCP VPCs
+        if: steps.find_gcp.outputs.has == 'true'
+        id: delete_gcp
+        continue-on-error: true
+        uses: ./.github/actions/cloud-cleanup
+        with:
+          operation: delete
+          cloud: gcp
+          resources: ${{ steps.find_gcp.outputs.result }}
+          gcp-credentials: ${{ secrets.GCP_CREDENTIALS }}
+          gcp-project-id: ${{ secrets.GCP_PROJECT_ID }}
 
       - name: Delete demo subnets from UDDI
         if: steps.find_subnets.outputs.has == 'true'
@@ -406,18 +309,22 @@ jobs:
 
           ### Clouds Scanned
 
-          | Cloud | Method |
-          |-------|--------|
-          | 🟠 AWS | VPC tag filter (\`Demo=true\`, \`ManagedBy=terraform\`) |
-          | 🔵 Azure | Resource Group tag filter (\`demo=true\`) |
-          | 🟢 GCP | VPC description filter (\`UDDI\`) |
+          | Cloud | Filter | Found | Torn down | Failed |
+          |-------|--------|-------|-----------|--------|
+          | 🟠 AWS | `Demo=true` + `ManagedBy=terraform` | ${{ steps.find_aws.outputs.count || '0' }} | ${{ steps.delete_aws.outputs.deleted || '0' }} | ${{ steps.delete_aws.outputs.failed || '0' }} |
+          | 🔵 Azure | `demo=true` | ${{ steps.find_azure.outputs.count || '0' }} | ${{ steps.delete_azure.outputs.deleted || '0' }} | ${{ steps.delete_azure.outputs.failed || '0' }} |
+          | 🟢 GCP | `description:UDDI` | ${{ steps.find_gcp.outputs.count || '0' }} | ${{ steps.delete_gcp.outputs.deleted || '0' }} | ${{ steps.delete_gcp.outputs.failed || '0' }} |
 
           EOF
 
-          if [ "${{ steps.find_subnets.outputs.has }}" == "true" ]; then
-            echo "> ✅ **Status**: All demo VPC/VNet resources destroyed" >> $GITHUB_STEP_SUMMARY
+          FAILED=$(( ${{ steps.delete_aws.outputs.failed || '0' }} + ${{ steps.delete_azure.outputs.failed || '0' }} + ${{ steps.delete_gcp.outputs.failed || '0' }} ))
+          FOUND=$(( ${{ steps.find_aws.outputs.count || '0' }} + ${{ steps.find_azure.outputs.count || '0' }} + ${{ steps.find_gcp.outputs.count || '0' }} + ${{ steps.find_subnets.outputs.count || '0' }} ))
+          if [ "$FAILED" -gt 0 ]; then
+            echo "> ⚠️ **Status**: ${FAILED} resource(s) failed to tear down — see job logs" >> $GITHUB_STEP_SUMMARY
+          elif [ "$FOUND" -eq 0 ]; then
+            echo "> ℹ️ **Status**: No demo resources found — nothing to cleanup" >> $GITHUB_STEP_SUMMARY
           else
-            echo "> ℹ️ **Status**: No demo VPC/VNet resources found — nothing to cleanup" >> $GITHUB_STEP_SUMMARY
+            echo "> ✅ **Status**: All demo VPC/VNet resources destroyed" >> $GITHUB_STEP_SUMMARY
           fi
 
           cat >> $GITHUB_STEP_SUMMARY << 'FOOTER'
