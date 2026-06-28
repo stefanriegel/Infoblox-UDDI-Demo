@@ -1,0 +1,77 @@
+name: "Deploy network via UDDI IPAM"
+description: >-
+  Run the per-instance Terraform plan/apply loop for one cloud's network demo.
+  Orchestration only — the calling job keeps cache, verification, and summary
+  narration. Collapses the loop duplicated across the AWS/Azure/GCP jobs.
+
+inputs:
+  tf-dir:
+    description: "Terraform root directory for this cloud (e.g. live/demos/vpc-aws)."
+    required: true
+  cloud:
+    description: "Short cloud key used in resource naming and narration (aws|azure|gcp)."
+    required: true
+  emoji:
+    description: "Emoji used in the narration banners."
+    required: false
+    default: "🔷"
+  network-name:
+    description: "Base network name; each instance becomes <network-name>-<cloud>-<i>."
+    required: true
+  count:
+    description: "Number of networks to deploy."
+    required: false
+    default: "1"
+  subnet-size:
+    description: "Subnet size (CIDR prefix length)."
+    required: true
+  name-var:
+    description: "Terraform variable name for the network name (vpc_name|vnet_name)."
+    required: true
+  id-output:
+    description: "Terraform output name for the network id (vpc_id|vnet_id)."
+    required: true
+  cidr-output:
+    description: "Terraform output name for the allocated CIDR (vpc_cidr|vnet_cidr)."
+    required: true
+  bloxone-host:
+    required: true
+  bloxone-api-key:
+    required: true
+  extra-vars:
+    description: "Cloud-specific Terraform vars, one name=value per line (region, block id, ipam space, etc.)."
+    required: false
+    default: ""
+  action:
+    description: "apply | destroy (destroy is a no-op; cleanup is a separate workflow)."
+    required: false
+    default: "apply"
+
+outputs:
+  results:
+    description: "JSON array of '<name>|<id>|<cidr>' strings for the deployed networks."
+    value: ${{ steps.run.outputs.results }}
+  duration:
+    description: "Apply duration in seconds."
+    value: ${{ steps.run.outputs.duration }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      working-directory: ${{ inputs.tf-dir }}
+      env:
+        CLOUD: ${{ inputs.cloud }}
+        EMOJI: ${{ inputs.emoji }}
+        NETWORK_NAME: ${{ inputs.network-name }}
+        COUNT: ${{ inputs.count }}
+        SUBNET_SIZE: ${{ inputs.subnet-size }}
+        NAME_VAR: ${{ inputs.name-var }}
+        ID_OUTPUT: ${{ inputs.id-output }}
+        CIDR_OUTPUT: ${{ inputs.cidr-output }}
+        BLOXONE_HOST: ${{ inputs.bloxone-host }}
+        BLOXONE_API_KEY: ${{ inputs.bloxone-api-key }}
+        EXTRA_VARS: ${{ inputs.extra-vars }}
+        ACTION: ${{ inputs.action }}
+      run: bash "${GITHUB_ACTION_PATH}/deploy.sh"
