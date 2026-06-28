@@ -58,176 +58,26 @@ jobs:
 
       - name: Find all demo records via API
         id: find_records
-        run: |
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  🧹 Phase 1: Scanning DNS Zones for Demo Records            ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Querying UDDI API for all demo records (tag: demo=true)..."
-          echo ""
-          
-          # Define all zones to check
-          ZONES=("virtualife.pro." "az.gh.blox42.rocks." "aws.gh.blox42.rocks." "gcp.gh.blox42.rocks.")
-          
-          # Initialize empty array for all demo records
-          echo '[]' > /tmp/demo_records.json
-          TOTAL_RECORD_COUNT=0
-          
-          for ZONE_FQDN in "${ZONES[@]}"; do
-            echo "----------------------------------------"
-            echo "Checking zone: ${ZONE_FQDN}"
-            echo "----------------------------------------"
-            
-            # Get zone ID
-            ZONE_RESPONSE=$(curl -s -X GET \
-              -H "Authorization: Token ${BLOXONE_API_KEY}" \
-              "${BLOXONE_HOST}/api/ddi/v1/dns/auth_zone?_filter=fqdn==%22${ZONE_FQDN}%22")
-            
-            ZONE_ID=$(echo "${ZONE_RESPONSE}" | jq -r '.results[0].id' 2>/dev/null)
-            
-            if [ -z "${ZONE_ID}" ] || [ "${ZONE_ID}" == "null" ]; then
-              echo "⚠️ Zone not found: ${ZONE_FQDN}"
-              echo ""
-              continue
-            fi
-            
-            echo "Zone ID: ${ZONE_ID}"
-            
-            # Query ALL records in zone with pagination
-            ACCUM='[]'
-            PAGE=1
-            MAX_PAGES=20
-            PREV_HASH=""
-            while true; do
-              PAGE_RESPONSE=$(curl -sS --fail --max-time 30 -X GET \
-                -H "Authorization: Token ${BLOXONE_API_KEY}" \
-                "${BLOXONE_HOST}/api/ddi/v1/dns/record?_filter=zone==%22${ZONE_ID}%22&_fields=id,name_in_zone,type,rdata,tags,comment&_limit=500&_page=${PAGE}") || {
-                  echo "⚠️ API request failed or timed out on page ${PAGE}; stopping pagination";
-                  break;
-                }
-              PAGE_RECORDS=$(echo "${PAGE_RESPONSE}" | jq '.results // []')
-              PAGE_COUNT=$(echo "${PAGE_RECORDS}" | jq -r 'length')
-              if [ "${PAGE_COUNT}" -eq 0 ]; then
-                break
-              fi
-              # Detect repeating page (API ignoring _page) to avoid infinite loop
-              CUR_HASH=$(echo "${PAGE_RECORDS}" | jq -r 'map(.id) | join("|")')
-              if [ -n "${PREV_HASH}" ] && [ "${CUR_HASH}" = "${PREV_HASH}" ]; then
-                echo "ℹ️ Pagination appears unsupported (repeating page); stopping after page ${PAGE}"
-                break
-              fi
-              PREV_HASH="${CUR_HASH}"
-              ACCUM=$(jq -s '.[0] + .[1]' <(echo "${ACCUM}") <(echo "${PAGE_RECORDS}"))
-              # If returned fewer than limit, last page reached
-              if [ "${PAGE_COUNT}" -lt 500 ]; then
-                break
-              fi
-              PAGE=$((PAGE + 1))
-              if [ ${PAGE} -gt ${MAX_PAGES} ]; then
-                echo "ℹ️ Reached safety limit of ${MAX_PAGES} pages; stopping pagination"
-                break
-              fi
-            done
-            
-            # Filter locally for records with demo=true tag (robust across tag schemas) OR Terraform-managed comment
-            ZONE_DEMO_RECORDS=$(echo "${ACCUM}" | jq 'map(select(
-              (.tags.demo == "true") or 
-              (.tags.demo == true) or 
-              ((.tags | type == "array") and any(.[]; ((.key == "demo" or .name == "demo") and (.value == "true" or .value == true)))) or 
-              (.comment != null and (.comment | test("Terraform-managed"; "i")))
-            ))')
-            
-            ZONE_RECORD_COUNT=$(echo "${ZONE_DEMO_RECORDS}" | jq -r 'length' 2>/dev/null || echo 0)
-            
-            echo "Found ${ZONE_RECORD_COUNT} demo records in this zone"
-            
-            if [ "${ZONE_RECORD_COUNT}" -gt 0 ]; then
-              echo "Records:"
-              echo "${ZONE_DEMO_RECORDS}" | jq -r '.[] | "  - \\(.name_in_zone).${ZONE_FQDN%.} (\\(.type))"'
-              
-              # Merge with existing records
-              MERGED=$(jq -s '.[0] + .[1]' /tmp/demo_records.json <(echo "${ZONE_DEMO_RECORDS}"))
-              echo "${MERGED}" > /tmp/demo_records.json
-              
-              TOTAL_RECORD_COUNT=$((TOTAL_RECORD_COUNT + ZONE_RECORD_COUNT))
-            fi
-            
-            echo ""
-          done
-          
-          echo "========================================"
-          echo "Total demo records found: ${TOTAL_RECORD_COUNT}"
-          echo "========================================"
-          
-          if [ "${TOTAL_RECORD_COUNT}" -gt 0 ]; then
-            echo "has_records=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_records=false" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "record_count=${TOTAL_RECORD_COUNT}" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/uddi
+        with:
+          operation: find-demo-records
+          host: ${{ env.BLOXONE_HOST }}
+          api-key: ${{ env.BLOXONE_API_KEY }}
+          zones: "virtualife.pro. az.gh.blox42.rocks. aws.gh.blox42.rocks. gcp.gh.blox42.rocks."
 
       - name: Delete demo records via API
-        if: steps.find_records.outputs.has_records == 'true'
+        if: steps.find_records.outputs.has == 'true'
         id: delete_records
-        run: |
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  🧹 Phase 2: Deleting Tagged DNS Records                    ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          set +e  # Don't exit on error, we want to try all deletions
-          
-          DELETE_START=$(date +%s)
-          
-          # Support both array-only and {results:[]} JSON structures
-          RECORD_IDS=$(jq -r 'if type=="object" and has("results") then .results[].id else .[].id end' /tmp/demo_records.json 2>/dev/null)
-          
-          echo "Found records to delete:"
-          echo "${RECORD_IDS}"
-          echo ""
-          
-          DELETED=0
-          FAILED=0
-          
-          for RECORD_ID in ${RECORD_IDS}; do
-            echo "Deleting ${RECORD_ID}..."
-            HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/delete_response.json \
-              -X DELETE \
-              -H "Authorization: Token ${BLOXONE_API_KEY}" \
-              "${BLOXONE_HOST}/api/ddi/v1/${RECORD_ID}")
-            
-            if [ "${HTTP_CODE}" -eq 200 ] || [ "${HTTP_CODE}" -eq 204 ]; then
-              echo "✅ Deleted successfully (HTTP ${HTTP_CODE})"
-              DELETED=$((DELETED + 1))
-            elif [ "${HTTP_CODE}" -eq 404 ]; then
-              echo "ℹ️ Record already deleted (HTTP 404)"
-              DELETED=$((DELETED + 1))
-            else
-              echo "❌ Failed to delete (HTTP ${HTTP_CODE})"
-              cat /tmp/delete_response.json 2>/dev/null || echo "No response body"
-              FAILED=$((FAILED + 1))
-            fi
-            echo ""
-          done
-          
-          echo "Summary: ${DELETED} deleted, ${FAILED} failed"
-          
-          # Clean up state file
-          if [ ${FAILED} -eq 0 ]; then
-            echo "All resources deleted, removing state file"
-            rm -f terraform.tfstate terraform.tfstate.backup
-          fi
-          
-          # Exit with error if any deletions failed
-          if [ ${FAILED} -gt 0 ]; then
-            echo "⚠️ Some resources failed to delete"
-            exit 1
-          fi
-          
-          DELETE_END=$(date +%s)
-          DELETE_DURATION=$((DELETE_END - DELETE_START))
-          echo "✅ DNS record cleanup completed in ${DELETE_DURATION}s"
-          echo "delete_duration=${DELETE_DURATION}" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/uddi
+        with:
+          operation: delete
+          host: ${{ env.BLOXONE_HOST }}
+          api-key: ${{ env.BLOXONE_API_KEY }}
+          resources: ${{ steps.find_records.outputs.result }}
+
+      - name: Drop cached state after full cleanup
+        if: steps.delete_records.outcome == 'success' && steps.find_records.outputs.has == 'true'
+        run: rm -f terraform.tfstate terraform.tfstate.backup
 
       - name: Job Summary
         if: always()
@@ -273,8 +123,8 @@ jobs:
           | **Trigger** | \`${{ github.event_name }}\` |
           | **Strategy** | Multi-zone tag-based cleanup (\`demo=true\`) |
           | **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
-          | **Demo Records Found** | ${{ steps.find_records.outputs.record_count || '0' }} |
-          | **Delete Duration** | ${{ steps.delete_records.outputs.delete_duration || 'N/A' }}s |
+          | **Demo Records Found** | ${{ steps.find_records.outputs.count || '0' }} |
+          | **Delete Duration** | ${{ steps.delete_records.outputs.duration || 'N/A' }}s |
 
           ### Zones Scanned
 
@@ -287,7 +137,7 @@ jobs:
 
           EOF
 
-          if [ "${{ steps.find_records.outputs.has_records }}" == "true" ]; then
+          if [ "${{ steps.find_records.outputs.has }}" == "true" ]; then
             echo "> ✅ **Status**: All demo records destroyed successfully" >> $GITHUB_STEP_SUMMARY
           else
             echo "> ℹ️ **Status**: No demo records found — nothing to cleanup" >> $GITHUB_STEP_SUMMARY
@@ -332,39 +182,11 @@ jobs:
 
       - name: Find demo subnets in UDDI IPAM
         id: find_subnets
-        run: |
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  🧹 Phase 1: Scanning UDDI IPAM for Demo Subnets            ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          echo "Querying UDDI IPAM for demo subnets (tag: demo=true)..."
-          
-          # Query all subnets
-          ALL_SUBNETS=$(curl -s -X GET \
-            -H "Authorization: Token ${BLOXONE_API_KEY}" \
-            "${BLOXONE_HOST}/api/ddi/v1/ipam/subnet?_fields=id,address,cidr,name,tags,comment")
-          
-          # Filter locally for subnets with demo=true tag
-          DEMO_SUBNETS=$(echo "${ALL_SUBNETS}" | jq '.results | map(select(
-            (.tags.demo == "true") and 
-            ((.tags.cloud == "aws") or (.tags.cloud == "azure") or (.tags.cloud == "gcp"))
-          ))')
-          
-          echo "{\"results\": ${DEMO_SUBNETS}}" > /tmp/demo_subnets.json
-          
-          SUBNET_COUNT=$(echo "${DEMO_SUBNETS}" | jq -r 'length' 2>/dev/null || echo 0)
-          
-          echo "Found ${SUBNET_COUNT} demo subnets to release"
-          
-          if [ "${SUBNET_COUNT}" -gt 0 ]; then
-            echo "Demo subnets:"
-            echo "${DEMO_SUBNETS}" | jq -r '.[] | "  - \(.name) (\(.address)/\(.cidr)) [\(.tags.cloud)]"'
-            echo "has_subnets=true" >> $GITHUB_OUTPUT
-          else
-            echo "has_subnets=false" >> $GITHUB_OUTPUT
-          fi
-          
-          echo "subnet_count=${SUBNET_COUNT}" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/uddi
+        with:
+          operation: find-demo-subnets
+          host: ${{ env.BLOXONE_HOST }}
+          api-key: ${{ env.BLOXONE_API_KEY }}
 
       - name: Cleanup AWS VPCs via AWS CLI
         env:
@@ -531,52 +353,14 @@ jobs:
           fi
 
       - name: Delete demo subnets from UDDI
-        if: steps.find_subnets.outputs.has_subnets == 'true'
+        if: steps.find_subnets.outputs.has == 'true'
         id: delete_subnets
-        run: |
-          echo "╔══════════════════════════════════════════════════════════════╗"
-          echo "║  🧹 Phase 5: Deleting UDDI IPAM Subnets                     ║"
-          echo "╚══════════════════════════════════════════════════════════════╝"
-          echo ""
-          set +e
-          
-          DELETE_START=$(date +%s)
-          
-          SUBNET_IDS=$(jq -r '.results[].id' /tmp/demo_subnets.json 2>/dev/null)
-          
-          echo "Cleaning up UDDI IPAM subnets..."
-          echo ""
-          
-          DELETED=0
-          FAILED=0
-          
-          for SUBNET_ID in ${SUBNET_IDS}; do
-            echo "Deleting ${SUBNET_ID}..."
-            HTTP_CODE=$(curl -s -w "%{http_code}" -o /tmp/delete_response.json \
-              -X DELETE \
-              -H "Authorization: Token ${BLOXONE_API_KEY}" \
-              "${BLOXONE_HOST}/api/ddi/v1/${SUBNET_ID}")
-            
-            if [ "${HTTP_CODE}" -eq 200 ] || [ "${HTTP_CODE}" -eq 204 ]; then
-              echo "✅ Deleted successfully (HTTP ${HTTP_CODE})"
-              DELETED=$((DELETED + 1))
-            elif [ "${HTTP_CODE}" -eq 404 ]; then
-              echo "ℹ️ Subnet already deleted (HTTP 404)"
-              DELETED=$((DELETED + 1))
-            else
-              echo "❌ Failed to delete (HTTP ${HTTP_CODE})"
-              cat /tmp/delete_response.json 2>/dev/null || echo "No response body"
-              FAILED=$((FAILED + 1))
-            fi
-            echo ""
-          done
-          
-          echo "Summary: ${DELETED} deleted, ${FAILED} failed"
-          
-          DELETE_END=$(date +%s)
-          DELETE_DURATION=$((DELETE_END - DELETE_START))
-          echo "✅ VPC/IPAM cleanup completed in ${DELETE_DURATION}s"
-          echo "delete_duration=${DELETE_DURATION}" >> $GITHUB_OUTPUT
+        uses: ./.github/actions/uddi
+        with:
+          operation: delete
+          host: ${{ env.BLOXONE_HOST }}
+          api-key: ${{ env.BLOXONE_API_KEY }}
+          resources: ${{ steps.find_subnets.outputs.result }}
 
       - name: VPC Cleanup Summary
         if: always()
@@ -617,8 +401,8 @@ jobs:
           | **Trigger** | \`${{ github.event_name }}\` |
           | **Strategy** | Tag-based cleanup (\`demo=true\` + cloud provider tags) |
           | **Time** | $(date -u '+%Y-%m-%d %H:%M:%S UTC') |
-          | **Demo Subnets Found** | ${{ steps.find_subnets.outputs.subnet_count || '0' }} |
-          | **Delete Duration** | ${{ steps.delete_subnets.outputs.delete_duration || 'N/A' }}s |
+          | **Demo Subnets Found** | ${{ steps.find_subnets.outputs.count || '0' }} |
+          | **Delete Duration** | ${{ steps.delete_subnets.outputs.duration || 'N/A' }}s |
 
           ### Clouds Scanned
 
@@ -630,7 +414,7 @@ jobs:
 
           EOF
 
-          if [ "${{ steps.find_subnets.outputs.has_subnets }}" == "true" ]; then
+          if [ "${{ steps.find_subnets.outputs.has }}" == "true" ]; then
             echo "> ✅ **Status**: All demo VPC/VNet resources destroyed" >> $GITHUB_STEP_SUMMARY
           else
             echo "> ℹ️ **Status**: No demo VPC/VNet resources found — nothing to cleanup" >> $GITHUB_STEP_SUMMARY

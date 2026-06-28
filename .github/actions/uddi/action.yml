@@ -1,0 +1,57 @@
+name: "UDDI access"
+description: >-
+  Scan and delete demo resources in Infoblox UDDI behind one canonical is_demo
+  predicate. Plumbing only — the calling workflow keeps the presented narration
+  (banners, job summaries). See docs/adr/0003-workflow-narration-is-demo-ui.md.
+
+inputs:
+  operation:
+    description: "find-demo-records | find-demo-subnets | delete"
+    required: true
+  api-key:
+    description: "UDDI API key (Authorization: Token)."
+    required: true
+  host:
+    description: "UDDI CSP host."
+    required: false
+    default: "https://csp.infoblox.com"
+  zones:
+    description: "Space-separated zone FQDNs (find-demo-records)."
+    required: false
+    default: ""
+  resources:
+    description: "JSON array (or {results:[]}) of resources to delete (delete)."
+    required: false
+    default: "[]"
+
+outputs:
+  result:
+    description: "JSON array of matched demo resources (find operations)."
+    value: ${{ steps.run.outputs.result }}
+  count:
+    description: "Number of matched resources."
+    value: ${{ steps.run.outputs.count }}
+  has:
+    description: "'true' when count > 0."
+    value: ${{ steps.run.outputs.has }}
+  deleted:
+    description: "Number deleted (delete operation)."
+    value: ${{ steps.run.outputs.deleted }}
+  failed:
+    description: "Number of failed deletions (delete operation)."
+    value: ${{ steps.run.outputs.failed }}
+  duration:
+    description: "Delete duration in seconds (delete operation)."
+    value: ${{ steps.run.outputs.duration }}
+
+runs:
+  using: composite
+  steps:
+    - id: run
+      shell: bash
+      env:
+        UDDI_HOST: ${{ inputs.host }}
+        UDDI_API_KEY: ${{ inputs.api-key }}
+        UDDI_ZONES: ${{ inputs.zones }}
+        UDDI_RESOURCES: ${{ inputs.resources }}
+      run: bash "${GITHUB_ACTION_PATH}/uddi.sh" "${{ inputs.operation }}"
