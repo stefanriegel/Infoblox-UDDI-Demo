@@ -21,20 +21,16 @@ provider "azurerm" {
   features {}
 }
 
-# Get next available subnet from Azure IPAM block using direct ID
-data "bloxone_ipam_next_available_subnets" "vnet_subnet" {
-  id           = "ipam/address_block/${var.azure_block_id}"
-  cidr         = var.subnet_size
-  subnet_count = 1
-}
+# Allocate + reserve a subnet from the Azure IPAM block (see ../../../CONTEXT.md)
+module "subnet" {
+  source = "../../../modules/allocated_subnet"
 
-# Reserve subnet in UDDI with tags
-resource "bloxone_ipam_subnet" "vnet_subnet" {
-  address = replace(trimspace(data.bloxone_ipam_next_available_subnets.vnet_subnet.results[0]), "\"", "")
-  cidr    = var.subnet_size
-  space   = var.ipam_space_id
-  name    = var.vnet_name
-  comment = "Azure VNet ${var.vnet_name} in ${var.azure_location} - allocated from Azure block 10.44.0.0/16"
+  block_id    = var.azure_block_id
+  subnet_size = var.subnet_size
+  space_id    = var.ipam_space_id
+  name        = var.vnet_name
+  comment     = "Azure VNet ${var.vnet_name} in ${var.azure_location} - allocated from Azure block 10.44.0.0/16"
+  parent_cidr = "10.44.0.0/16"
 
   tags = {
     "demo"       = "true"
@@ -43,6 +39,12 @@ resource "bloxone_ipam_subnet" "vnet_subnet" {
     "vnet_name"  = var.vnet_name
     "region"     = var.azure_location
   }
+}
+
+# Preserve state across the move into the allocated_subnet module
+moved {
+  from = bloxone_ipam_subnet.vnet_subnet
+  to   = module.subnet.bloxone_ipam_subnet.this
 }
 
 # Create Azure Resource Group
@@ -59,7 +61,7 @@ resource "azurerm_resource_group" "main" {
 }
 
 locals {
-  vnet_cidr    = "${replace(trimspace(data.bloxone_ipam_next_available_subnets.vnet_subnet.results[0]), "\"", "")}/${var.subnet_size}"
+  vnet_cidr    = module.subnet.cidr
   subnet_names = ["web", "app", "data"]
   subnet_cidrs = [for i in range(length(local.subnet_names)) : cidrsubnet(local.vnet_cidr, 2, i)]
 }
@@ -126,11 +128,11 @@ output "azure_location" {
 }
 
 output "uddi_subnet_id" {
-  value       = bloxone_ipam_subnet.vnet_subnet.id
+  value       = module.subnet.subnet_id
   description = "UDDI IPAM Subnet ID"
 }
 
 output "parent_block" {
-  value       = "10.44.0.0/16"
+  value       = module.subnet.parent_cidr
   description = "Azure Reserved IPAM Block"
 }

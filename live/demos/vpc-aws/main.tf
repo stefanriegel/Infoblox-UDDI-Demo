@@ -21,16 +21,35 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Get next available subnet from AWS IPAM block (using direct block ID)
-data "bloxone_ipam_next_available_subnets" "vpc_subnet" {
-  id           = "ipam/address_block/${var.aws_block_id}"
-  cidr         = var.subnet_size
-  subnet_count = 1
+# Allocate + reserve a subnet from the AWS IPAM block (see ../../../CONTEXT.md)
+module "subnet" {
+  source = "../../../modules/allocated_subnet"
+
+  block_id    = var.aws_block_id
+  subnet_size = var.subnet_size
+  space_id    = var.ipam_space_id
+  name        = "${var.vpc_name}-subnet"
+  comment     = "AWS VPC ${var.vpc_name} in ${var.aws_region} - allocated from AWS block 10.42.0.0/16"
+  parent_cidr = "10.42.0.0/16"
+
+  tags = {
+    "demo"       = "true"
+    "automation" = "github-actions"
+    "cloud"      = "aws"
+    "vpc_name"   = var.vpc_name
+    "region"     = var.aws_region
+  }
+}
+
+# Preserve state across the move into the allocated_subnet module
+moved {
+  from = bloxone_ipam_subnet.vpc_subnet
+  to   = module.subnet.bloxone_ipam_subnet.this
 }
 
 # Create AWS VPC with UDDI-allocated CIDR
 resource "aws_vpc" "main" {
-  cidr_block           = "${replace(trimspace(data.bloxone_ipam_next_available_subnets.vpc_subnet.results[0]), "\"", "")}/${var.subnet_size}"
+  cidr_block           = module.subnet.cidr
   enable_dns_hostnames = true
   enable_dns_support   = true
 
@@ -38,24 +57,7 @@ resource "aws_vpc" "main" {
     Name         = var.vpc_name
     ManagedBy    = "terraform"
     Demo         = "true"
-    UDDIReserved = "10.42.0.0/16"
-  }
-}
-
-# Reserve the subnet in UDDI
-resource "bloxone_ipam_subnet" "vpc_subnet" {
-  address = replace(trimspace(data.bloxone_ipam_next_available_subnets.vpc_subnet.results[0]), "\"", "")
-  cidr    = var.subnet_size
-  space   = var.ipam_space_id
-  name    = "${var.vpc_name}-subnet"
-  comment = "AWS VPC ${var.vpc_name} in ${var.aws_region} - allocated from AWS block 10.42.0.0/16"
-  
-  tags = {
-    "demo"       = "true"
-    "automation" = "github-actions"
-    "cloud"      = "aws"
-    "vpc_name"   = var.vpc_name
-    "region"     = var.aws_region
+    UDDIReserved = module.subnet.parent_cidr
   }
 }
 
@@ -82,7 +84,7 @@ output "vpc_cidr" {
 
 output "uddi_subnet_id" {
   description = "UDDI Subnet ID"
-  value       = bloxone_ipam_subnet.vpc_subnet.id
+  value       = module.subnet.subnet_id
 }
 
 output "aws_region" {
@@ -92,5 +94,5 @@ output "aws_region" {
 
 output "parent_block" {
   description = "AWS Reserved IPAM Block"
-  value       = "10.42.0.0/16"
+  value       = module.subnet.parent_cidr
 }
