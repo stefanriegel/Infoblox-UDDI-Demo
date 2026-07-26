@@ -18,6 +18,11 @@ on:
           - "pve-fsn1-dc17"
           - "pve-fsn1-dc3"
         default: "auto"
+      resource_pool:
+        description: "Proxmox resource pool to deploy into"
+        required: true
+        type: string
+        default: "LAB-SRiegel"
       vlan_tag:
         description: "VLAN tag on vnet5000"
         required: true
@@ -82,7 +87,8 @@ jobs:
             exit 1
           fi
           echo "✅ Secrets present"
-          echo "VM: ${VM_NAME} | node: ${{ inputs.proxmox_node }} | vnet5000 VLAN ${{ inputs.vlan_tag }}"
+          echo "VM: ${VM_NAME} | node: ${{ inputs.proxmox_node }} | pool: ${{ inputs.resource_pool }}"
+          echo "Network: vnet5000 VLAN ${{ inputs.vlan_tag }}"
           echo "Sizing: ${{ inputs.vm_cores }} vCPU / ${{ inputs.vm_memory }} MB"
 
       - name: Setup Terraform
@@ -126,6 +132,7 @@ jobs:
             -var="proxmox_api_token=${PROXMOX_API_TOKEN}" \
             -var="proxmox_node=${NODE}" \
             -var="vm_name=${VM_NAME}" \
+            -var="resource_pool=${{ inputs.resource_pool }}" \
             -var="vlan_tag=${{ inputs.vlan_tag }}" \
             -var="vm_cores=${{ inputs.vm_cores }}" \
             -var="vm_memory=${{ inputs.vm_memory }}"
@@ -189,6 +196,7 @@ jobs:
               echo "| VMID | \`${{ steps.tf.outputs.vm_id }}\` |"
               echo "| Node | \`${{ steps.tf.outputs.node }}\` |"
               echo "| MAC | \`${{ steps.tf.outputs.mac }}\` |"
+              echo "| Resource pool | \`${{ inputs.resource_pool }}\` |"
               echo "| Bridge / VLAN | \`vnet5000\` / \`${{ inputs.vlan_tag }}\` |"
               echo "| Sizing | ${{ inputs.vm_cores }} vCPU / ${{ inputs.vm_memory }} MB |"
               echo "| Power state | \`${{ steps.verify.outputs.status }}\` |"

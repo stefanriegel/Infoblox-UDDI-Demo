@@ -42,6 +42,7 @@ clone, and every apply carries a freshly rendered join token.
 | ISO datastore | `ISO` (NFS, shared) | Must allow `iso` content |
 | Bridge | `vnet5000` (VXLAN zone `vx4000`, `vlanaware=1`) | VLAN-aware, so tag 32 is valid |
 | CD-ROM slot | `ide2` | Free in the template (`ide2: none,media=cdrom`) |
+| Resource pool | `LAB-SRiegel` | Clone is assigned to it; `pool_id` updates in place, no rebuild |
 
 The template's boot order starts with `ide2`. The seed ISO has no boot sector,
 so the BIOS falls through to `scsi0` — no boot-order change needed.
@@ -65,7 +66,7 @@ host_setup:
 ### GitHub Actions
 
 1. Actions → **UDDI - NIOS-X on Proxmox** → Run workflow
-2. Set VM name, target node (`auto` picks the first online node), VLAN tag, sizing
+2. Set VM name, target node (`auto` picks the first online node), resource pool, VLAN tag, sizing
 3. Select `action: apply`
 4. The job summary reports VMID, node, MAC and power state
 

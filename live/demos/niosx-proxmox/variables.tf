@@ -27,6 +27,12 @@ variable "proxmox_node" {
   default     = ""
 }
 
+variable "resource_pool" {
+  description = "Proxmox resource pool the cloned VM is assigned to"
+  type        = string
+  default     = "LAB-SRiegel"
+}
+
 variable "template_vm_id" {
   description = "VMID of the NIOS-X template to clone"
   type        = number

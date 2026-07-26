@@ -10,7 +10,8 @@ vm_cores  = 4
 vm_memory = 8192
 
 # Empty = auto-pick the first online node.
-proxmox_node = ""
+proxmox_node  = ""
+resource_pool = "LAB-SRiegel"
 
 network_bridge = "vnet5000"
 vlan_tag       = 32

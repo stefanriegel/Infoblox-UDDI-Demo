@@ -20,7 +20,7 @@ UDDI as IPAM source for automatic subnet allocation across AWS, Azure, and GCP.
 Clone a NIOS-X template on the Proxmox cluster and auto-join it to the Infoblox Portal.
 - Workflow: `niosx-deployment.yml`
 - Source: `NIOS-X-TEMPLATE` (VMID 1061) on `pve-fsn1-dc13` cluster
-- Features: cloud-init join token via NoCloud seed ISO, VLAN-tagged SDN attach, auto node selection
+- Features: cloud-init join token via NoCloud seed ISO, VLAN-tagged SDN attach, auto node selection, resource pool placement
 
 ### 4. Automated Cleanup
 Scheduled and manual cleanup of demo resources.
@@ -63,7 +63,7 @@ GitHub Actions (UI) --> Terraform --> Infoblox UDDI --> Cloud Providers
 
 ### NIOS-X Demo
 1. Actions → "UDDI - NIOS-X on Proxmox" → Run workflow
-2. Configure: VM name, target node (`auto` = first online), VLAN tag, vCPU/RAM
+2. Configure: VM name, target node (`auto` = first online), resource pool, VLAN tag, vCPU/RAM
 3. Select `action: apply`
 4. Terraform clones VMID 1061, uploads the cloud-init seed, and starts the VM
 5. The server appears under Infrastructure → NIOS-X Servers in the Infoblox Portal

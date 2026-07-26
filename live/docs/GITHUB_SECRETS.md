@@ -135,6 +135,7 @@ gcloud iam service-accounts keys create key.json \
 - `VM.Allocate`, `VM.Clone`, `VM.Config.*`, `VM.PowerMgmt`, `VM.Audit`
 - `Datastore.AllocateSpace`, `Datastore.AllocateTemplate`, `Datastore.Audit`
 - `SDN.Use` (for `vnet5000`)
+- `Pool.Allocate` on `/pool/LAB-SRiegel` (pool assignment)
 - `Sys.Audit` (node listing for auto node selection)
 
 **Get the join token:** Infoblox Portal → **Infrastructure → NIOS-X Servers → Create → Join Token**.

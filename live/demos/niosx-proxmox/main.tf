@@ -50,6 +50,7 @@ resource "proxmox_virtual_environment_vm" "niosx" {
   name        = var.vm_name
   description = "NIOS-X server cloned from template ${var.template_vm_id} - Infoblox UDDI demo"
   node_name   = local.target_node
+  pool_id     = var.resource_pool
   tags        = ["demo", "terraform", "niosx"]
 
   clone {
@@ -108,6 +109,11 @@ output "vm_name" {
 output "node_name" {
   value       = local.target_node
   description = "Proxmox node hosting the cloned NIOS-X server"
+}
+
+output "resource_pool" {
+  value       = var.resource_pool
+  description = "Proxmox resource pool the NIOS-X server belongs to"
 }
 
 output "mac_address" {
