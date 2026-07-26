@@ -1,0 +1,15 @@
+# Copy to terraform.tfvars (gitignored) for local runs.
+# Azure credentials come from ARM_* environment variables or az login.
+#
+# Marketplace terms must be accepted once per subscription:
+#   az vm image terms accept --urn infoblox:infoblox-nios-x-vm:infoblox-nios-x-vm:4.1.10
+
+azure_location   = "germanywestcentral"
+name             = "niosx-azure-demo"
+niosx_join_token = "<join-token-from-infoblox-portal>"
+
+vm_size       = "Standard_B4als_v2"
+image_version = "4.1.10"
+os_disk_type  = "StandardSSD_LRS"
+
+vnet_cidr = "10.91.0.0/24"

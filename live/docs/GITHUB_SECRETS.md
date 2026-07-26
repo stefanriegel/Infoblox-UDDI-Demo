@@ -143,6 +143,21 @@ gcloud iam service-accounts keys create key.json \
 **Note:** No SSH access to the Proxmox nodes is needed — the cloud-init seed ISO
 is uploaded through the API. See `README-NIOSX-DEMO.md`.
 
+### NIOS-X on AWS / Azure (cloud demo)
+
+No additional secrets. Reuses `NIOSX_JOIN_TOKEN`, the AWS credentials
+(`AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`) and the Azure service principal
+(`ARM_*`) already listed above.
+
+**Extra AWS permissions:** `ec2:RunInstances`, `ec2:TerminateInstances`,
+`ec2:Describe*`, plus VPC/subnet/IGW/route-table/security-group create+delete.
+
+**Extra Azure requirement:** the subscription must accept the marketplace terms
+once — `az vm image terms accept --urn infoblox:infoblox-nios-x-vm:infoblox-nios-x-vm:4.1.10`.
+The service principal needs `Contributor` on the subscription.
+
+See `README-NIOSX-CLOUD-DEMO.md`.
+
 ### Variables (not secrets)
 
 Navigate to: **Repository Settings → Secrets and variables → Actions → Variables**

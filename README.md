@@ -22,7 +22,14 @@ Clone a NIOS-X template on the Proxmox cluster and auto-join it to the Infoblox 
 - Source: `NIOS-X-TEMPLATE` (VMID 1061) on `pve-fsn1-dc13` cluster
 - Features: cloud-init join token via NoCloud seed ISO, VLAN-tagged SDN attach, auto node selection, resource pool placement
 
-### 4. Automated Cleanup
+### 4. NIOS-X Server on AWS / Azure
+Deploy NIOS-X from the vendor marketplace images and auto-join to the Infoblox Portal.
+- Workflow: `niosx-cloud-deployment.yml`
+- AWS: `ami-083f8f34b0e02be1a`, `c6a.xlarge`, eu-central-1 (Frankfurt)
+- Azure: `infoblox-nios-x-vm` BYOL, `Standard_B4als_v2`, germanywestcentral (Frankfurt)
+- Features: join token via cloud-init user-data/custom_data, self-contained VPC/VNet
+
+### 5. Automated Cleanup
 Scheduled and manual cleanup of demo resources.
 - Workflow: `cleanup.yml`
 - Runs: Daily at 00:00 GMT+2 or manual trigger
@@ -68,6 +75,12 @@ GitHub Actions (UI) --> Terraform --> Infoblox UDDI --> Cloud Providers
 4. Terraform clones VMID 1061, uploads the cloud-init seed, and starts the VM
 5. The server appears under Infrastructure → NIOS-X Servers in the Infoblox Portal
 
+### NIOS-X Cloud Demo
+1. Actions → "UDDI - NIOS-X on AWS / Azure" → Run workflow
+2. Toggle AWS and/or Azure, pick instance size
+3. Select `action: apply`
+4. Each job summary reports instance ID, public/private IP and image used
+
 ### Cleanup
 1. Actions → "UDDI - Automated Cleanup" → Run workflow
 2. Enter `destroy` to confirm
@@ -81,6 +94,8 @@ cd live/demos/vpc-aws     # AWS VPC demo
 cd live/demos/vpc-azure   # Azure VNet demo
 cd live/demos/vpc-gcp     # GCP VPC demo
 cd live/demos/niosx-proxmox # NIOS-X on Proxmox demo
+cd live/demos/niosx-aws   # NIOS-X on AWS demo
+cd live/demos/niosx-azure # NIOS-X on Azure demo
 
 terraform init
 terraform plan -var="bloxone_api_key=$BLOXONE_API_KEY" ...
@@ -111,10 +126,13 @@ terraform apply -auto-approve
 │   │   ├── vpc-aws/          # AWS VPC Terraform
 │   │   ├── vpc-azure/        # Azure VNet Terraform
 │   │   ├── vpc-gcp/          # GCP VPC Terraform
-│   │   └── niosx-proxmox/    # NIOS-X on Proxmox Terraform
+│   │   ├── niosx-proxmox/    # NIOS-X on Proxmox Terraform
+│   │   ├── niosx-aws/        # NIOS-X on AWS Terraform
+│   │   └── niosx-azure/      # NIOS-X on Azure Terraform
 │   └── docs/
 │       ├── GITHUB_SECRETS.md # Secret setup guide
 │       ├── README-NIOSX-DEMO.md # NIOS-X on Proxmox details
+│       ├── README-NIOSX-CLOUD-DEMO.md # NIOS-X on AWS/Azure details
 │       └── README-VPC-DEMO.md # VPC demo details
 ├── modules/
 │   ├── cf_zone/              # Cloudflare integration
@@ -123,6 +141,7 @@ terraform apply -auto-approve
     ├── run-demo.yml          # DNS demo
     ├── vpc-deployment.yml    # Multi-cloud VPC
     ├── niosx-deployment.yml  # NIOS-X on Proxmox
+    ├── niosx-cloud-deployment.yml # NIOS-X on AWS/Azure
     └── cleanup.yml           # Automated cleanup
 ```
 
@@ -131,3 +150,4 @@ terraform apply -auto-approve
 - `live/docs/GITHUB_SECRETS.md` - Complete secret setup guide
 - `live/docs/README-VPC-DEMO.md` - VPC deployment details
 - `live/docs/README-NIOSX-DEMO.md` - NIOS-X on Proxmox details
+- `live/docs/README-NIOSX-CLOUD-DEMO.md` - NIOS-X on AWS/Azure details

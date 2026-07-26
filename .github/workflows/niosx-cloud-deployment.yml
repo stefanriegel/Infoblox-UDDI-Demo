@@ -1,0 +1,265 @@
+name: "UDDI - NIOS-X on AWS / Azure"
+
+on:
+  workflow_dispatch:
+    inputs:
+      deploy_aws:
+        description: "Deploy a NIOS-X server on AWS (Frankfurt)"
+        required: true
+        type: boolean
+        default: true
+      aws_instance_type:
+        description: "EC2 instance type (must be Nitro, >= 3 vCPU / 4 GB)"
+        required: true
+        type: choice
+        options:
+          - "c6a.xlarge"
+          - "c6i.xlarge"
+          - "m6a.xlarge"
+          - "c6a.2xlarge"
+        default: "c6a.xlarge"
+      deploy_azure:
+        description: "Deploy a NIOS-X server on Azure (Frankfurt)"
+        required: true
+        type: boolean
+        default: false
+      azure_vm_size:
+        description: "Azure VM size (B-series is burstable)"
+        required: true
+        type: choice
+        options:
+          - "Standard_B4als_v2"
+          - "Standard_D4ls_v5"
+          - "Standard_F4s_v2"
+          - "Standard_D4as_v5"
+        default: "Standard_B4als_v2"
+      name_suffix:
+        description: "Optional suffix to run several demos side by side"
+        required: false
+        type: string
+        default: ""
+      action:
+        description: "Terraform action to perform"
+        required: true
+        type: choice
+        options:
+          - "apply"
+          - "destroy"
+        default: "apply"
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  aws:
+    name: "NIOS-X on AWS"
+    if: ${{ inputs.deploy_aws == true }}
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      NIOSX_JOIN_TOKEN: ${{ secrets.NIOSX_JOIN_TOKEN }}
+    outputs:
+      public_ip: ${{ steps.tf.outputs.public_ip }}
+      instance_id: ${{ steps.tf.outputs.instance_id }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preflight
+        run: |
+          [ -n "${NIOSX_JOIN_TOKEN}" ] || { echo "❌ NIOSX_JOIN_TOKEN missing in environment 'dev'"; exit 1; }
+          [ -n "${AWS_ACCESS_KEY_ID}" ] || { echo "❌ AWS_ACCESS_KEY_ID missing"; exit 1; }
+          echo "✅ Secrets present"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Resolve name
+        id: name
+        run: |
+          NAME="niosx-aws-demo${{ inputs.name_suffix }}"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "Deploying ${NAME} (${{ inputs.aws_instance_type }}) in eu-central-1"
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/niosx-aws/.terraform
+            live/demos/niosx-aws/.terraform.lock.hcl
+            live/demos/niosx-aws/terraform.tfstate
+            live/demos/niosx-aws/terraform.tfstate.backup
+          key: tfstate-niosx-aws-${{ steps.name.outputs.name }}
+          restore-keys: |
+            tfstate-niosx-aws-
+
+      - name: Terraform ${{ inputs.action }}
+        id: tf
+        working-directory: live/demos/niosx-aws
+        run: |
+          set -euo pipefail
+          terraform init -input=false -no-color -reconfigure
+          terraform ${{ inputs.action }} -auto-approve -input=false -no-color \
+            -var="name=${{ steps.name.outputs.name }}" \
+            -var="niosx_join_token=${NIOSX_JOIN_TOKEN}" \
+            -var="instance_type=${{ inputs.aws_instance_type }}"
+
+          if [ "${{ inputs.action }}" = "apply" ]; then
+            {
+              echo "instance_id=$(terraform output -raw instance_id)"
+              echo "public_ip=$(terraform output -raw public_ip)"
+              echo "private_ip=$(terraform output -raw private_ip)"
+              echo "az=$(terraform output -raw availability_zone)"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save Terraform state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            live/demos/niosx-aws/.terraform
+            live/demos/niosx-aws/.terraform.lock.hcl
+            live/demos/niosx-aws/terraform.tfstate
+            live/demos/niosx-aws/terraform.tfstate.backup
+          key: tfstate-niosx-aws-${{ steps.name.outputs.name }}-${{ github.run_id }}
+
+      - name: Job Summary
+        if: always()
+        run: |
+          {
+            echo "## 🟠 NIOS-X on AWS"
+            if [ "${{ inputs.action }}" = "apply" ]; then
+              echo ""
+              echo "| Property | Value |"
+              echo "|---|---|"
+              echo "| Instance | \`${{ steps.tf.outputs.instance_id }}\` |"
+              echo "| Type | \`${{ inputs.aws_instance_type }}\` |"
+              echo "| Region / AZ | \`eu-central-1\` / \`${{ steps.tf.outputs.az }}\` |"
+              echo "| Public IP | \`${{ steps.tf.outputs.public_ip }}\` |"
+              echo "| Private IP | \`${{ steps.tf.outputs.private_ip }}\` |"
+              echo "| AMI | \`ami-083f8f34b0e02be1a\` |"
+            else
+              echo ""
+              echo "🧹 Destroyed the AWS NIOS-X demo."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  azure:
+    name: "NIOS-X on Azure"
+    if: ${{ inputs.deploy_azure == true }}
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.ARM_SUBSCRIPTION_ID }}
+      ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
+      NIOSX_JOIN_TOKEN: ${{ secrets.NIOSX_JOIN_TOKEN }}
+    outputs:
+      public_ip: ${{ steps.tf.outputs.public_ip }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preflight
+        run: |
+          [ -n "${NIOSX_JOIN_TOKEN}" ] || { echo "❌ NIOSX_JOIN_TOKEN missing in environment 'dev'"; exit 1; }
+          [ -n "${ARM_CLIENT_ID}" ] || { echo "❌ ARM_CLIENT_ID missing"; exit 1; }
+          echo "✅ Secrets present"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Resolve name
+        id: name
+        run: |
+          NAME="niosx-azure-demo${{ inputs.name_suffix }}"
+          echo "name=${NAME}" >> "$GITHUB_OUTPUT"
+          echo "Deploying ${NAME} (${{ inputs.azure_vm_size }}) in germanywestcentral"
+
+      - name: Verify marketplace terms
+        run: |
+          az login --service-principal -u "${ARM_CLIENT_ID}" -p "${ARM_CLIENT_SECRET}" \
+            --tenant "${ARM_TENANT_ID}" --output none
+          az account set --subscription "${ARM_SUBSCRIPTION_ID}"
+          ACCEPTED=$(az vm image terms show \
+            --urn infoblox:infoblox-nios-x-vm:infoblox-nios-x-vm:4.1.10 \
+            --query accepted -o tsv 2>/dev/null || echo "false")
+          echo "marketplace terms accepted: ${ACCEPTED}"
+          if [ "${ACCEPTED}" != "true" ]; then
+            echo "::error::Marketplace terms for infoblox:infoblox-nios-x-vm are not accepted on subscription ${ARM_SUBSCRIPTION_ID}."
+            echo "Run: az vm image terms accept --urn infoblox:infoblox-nios-x-vm:infoblox-nios-x-vm:4.1.10"
+            exit 1
+          fi
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/niosx-azure/.terraform
+            live/demos/niosx-azure/.terraform.lock.hcl
+            live/demos/niosx-azure/terraform.tfstate
+            live/demos/niosx-azure/terraform.tfstate.backup
+          key: tfstate-niosx-azure-${{ steps.name.outputs.name }}
+          restore-keys: |
+            tfstate-niosx-azure-
+
+      - name: Terraform ${{ inputs.action }}
+        id: tf
+        working-directory: live/demos/niosx-azure
+        run: |
+          set -euo pipefail
+          terraform init -input=false -no-color -reconfigure
+          terraform ${{ inputs.action }} -auto-approve -input=false -no-color \
+            -var="name=${{ steps.name.outputs.name }}" \
+            -var="niosx_join_token=${NIOSX_JOIN_TOKEN}" \
+            -var="vm_size=${{ inputs.azure_vm_size }}"
+
+          if [ "${{ inputs.action }}" = "apply" ]; then
+            {
+              echo "public_ip=$(terraform output -raw public_ip)"
+              echo "private_ip=$(terraform output -raw private_ip)"
+              echo "rg=$(terraform output -raw resource_group_name)"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save Terraform state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            live/demos/niosx-azure/.terraform
+            live/demos/niosx-azure/.terraform.lock.hcl
+            live/demos/niosx-azure/terraform.tfstate
+            live/demos/niosx-azure/terraform.tfstate.backup
+          key: tfstate-niosx-azure-${{ steps.name.outputs.name }}-${{ github.run_id }}
+
+      - name: Job Summary
+        if: always()
+        run: |
+          {
+            echo "## 🔵 NIOS-X on Azure"
+            if [ "${{ inputs.action }}" = "apply" ]; then
+              echo ""
+              echo "| Property | Value |"
+              echo "|---|---|"
+              echo "| Resource group | \`${{ steps.tf.outputs.rg }}\` |"
+              echo "| Size | \`${{ inputs.azure_vm_size }}\` |"
+              echo "| Region | \`germanywestcentral\` (Frankfurt) |"
+              echo "| Public IP | \`${{ steps.tf.outputs.public_ip }}\` |"
+              echo "| Private IP | \`${{ steps.tf.outputs.private_ip }}\` |"
+              echo "| Image | \`infoblox:infoblox-nios-x-vm:infoblox-nios-x-vm:4.1.10\` |"
+            else
+              echo ""
+              echo "🧹 Destroyed the Azure NIOS-X demo."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

@@ -1,0 +1,13 @@
+# Copy to terraform.tfvars (gitignored) for local runs.
+# AWS credentials come from the usual environment/profile chain.
+
+aws_region       = "eu-central-1"
+name             = "niosx-aws-demo"
+niosx_join_token = "<join-token-from-infoblox-portal>"
+
+ami_id           = "ami-083f8f34b0e02be1a"
+instance_type    = "c6a.xlarge"
+root_volume_size = 60
+
+vpc_cidr        = "10.90.0.0/24"
+dns_client_cidr = "10.90.0.0/24"
