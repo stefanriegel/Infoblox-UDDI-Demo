@@ -136,8 +136,26 @@ terraform apply -auto-approve
   exposes no SSH. Terraform generates a throwaway RSA key with `tls_private_key`
   purely to satisfy the API; it is never used and needs no secret. The key
   material does land in state.
-- **Public IPs.** Both servers get one so they can reach the Infoblox Portal
-  directly. Swap in a NAT gateway if outbound-only is required.
+- **Why a public IP when NIOS-X only needs egress.** Both servers get one, and
+  that looks wrong at first glance. It is the cheap option, not the permissive
+  one:
+  - Neither server is reachable from the internet. On Azure the effective NIC
+    rules allow inbound only from `VirtualNetwork` and `AzureLoadBalancer`;
+    everything else hits the default `DenyAllInBound`. On AWS the security group
+    allows only DNS/53 from the VPC CIDR. The address is routable but firewalled
+    shut.
+  - Removing it means paying for an explicit egress path. On AWS that is a NAT
+    gateway (the internet gateway itself is free, NAT is not). On Azure it is a
+    NAT gateway too, because `defaultOutboundAccess` — the implicit SNAT that
+    currently lets a VM reach the internet with no public IP — is being retired
+    and now applies to API versions after 31 March 2026. Building on it would
+    break the demo on an azurerm major bump.
+  - A NAT gateway costs roughly an order of magnitude more than the public IP
+    (Azure Standard static IPv4 is ~$0.005/hr, ~$3.65/mo) plus per-GB data
+    processing, on a demo that gets destroyed the same day.
+
+  For a production NIOS-X deployment, use a NAT gateway and a private subnet.
+  For this demo the public IP is the honest trade.
 - **Join tokens are secrets** and appear in cloud-init user-data, which is
   readable from instance metadata by anything on the box.
 - **Cost.** These are the cheapest supported sizes, not free. Destroy the demo
