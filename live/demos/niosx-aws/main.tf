@@ -87,7 +87,7 @@ resource "aws_route_table_association" "public" {
 # Egress is what the join actually needs. DNS ingress is scoped to the VPC by
 # default rather than opened to the internet.
 resource "aws_security_group" "niosx" {
-  name        = "sg-${var.name}"
+  name        = "${var.name}-sg"
   description = "NIOS-X server - outbound to Infoblox Portal, DNS from ${var.dns_client_cidr}"
   vpc_id      = aws_vpc.main.id
 
