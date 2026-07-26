@@ -76,7 +76,8 @@ fi
 
 # Fail loudly rather than uploading an ISO cloud-init will ignore.
 [ -s "$OUT" ] || { echo "error: $OUT was not created" >&2; exit 1; }
-if command -v file >/dev/null 2>&1 && ! file "$OUT" | grep -q CIDATA; then
+# cloud-localds labels it 'cidata', hdiutil 'CIDATA'; NoCloud accepts either.
+if command -v file >/dev/null 2>&1 && ! file "$OUT" | grep -qi cidata; then
   echo "error: $OUT is missing the CIDATA volume label" >&2
   exit 1
 fi
