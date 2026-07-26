@@ -1,0 +1,201 @@
+name: "UDDI - NIOS-X on Proxmox"
+
+on:
+  workflow_dispatch:
+    inputs:
+      vm_name:
+        description: "Name of the NIOS-X server to create"
+        required: true
+        type: string
+        default: "niosx-demo"
+      proxmox_node:
+        description: "Target cluster node (auto = first online node)"
+        required: true
+        type: choice
+        options:
+          - "auto"
+          - "pve-fsn1-dc13"
+          - "pve-fsn1-dc17"
+          - "pve-fsn1-dc3"
+        default: "auto"
+      vlan_tag:
+        description: "VLAN tag on vnet5000"
+        required: true
+        type: string
+        default: "32"
+      vm_cores:
+        description: "vCPU cores"
+        required: true
+        type: choice
+        options:
+          - "2"
+          - "4"
+          - "8"
+        default: "4"
+      vm_memory:
+        description: "Memory in MB"
+        required: true
+        type: choice
+        options:
+          - "4096"
+          - "8192"
+          - "16384"
+        default: "8192"
+      action:
+        description: "Terraform action to perform"
+        required: true
+        type: choice
+        options:
+          - "apply"
+          - "destroy"
+        default: "apply"
+
+env:
+  TF_IN_AUTOMATION: "true"
+
+jobs:
+  deploy:
+    name: "NIOS-X Server"
+    runs-on: ubuntu-latest
+    environment: dev
+    env:
+      PROXMOX_ENDPOINT: ${{ secrets.PROXMOX_ENDPOINT }}
+      PROXMOX_API_TOKEN: ${{ secrets.PROXMOX_API_TOKEN }}
+      NIOSX_JOIN_TOKEN: ${{ secrets.NIOSX_JOIN_TOKEN }}
+      VM_NAME: ${{ inputs.vm_name }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preflight
+        run: |
+          echo "╔══════════════════════════════════════════════════════════════╗"
+          echo "║  🔷 Preflight: NIOS-X on Proxmox                             ║"
+          echo "╚══════════════════════════════════════════════════════════════╝"
+          MISSING=""
+          [ -z "${PROXMOX_ENDPOINT}" ] && MISSING="${MISSING} PROXMOX_ENDPOINT"
+          [ -z "${PROXMOX_API_TOKEN}" ] && MISSING="${MISSING} PROXMOX_API_TOKEN"
+          [ -z "${NIOSX_JOIN_TOKEN}" ] && MISSING="${MISSING} NIOSX_JOIN_TOKEN"
+          if [ -n "${MISSING}" ]; then
+            echo "❌ Missing secrets in environment 'dev':${MISSING}"
+            exit 1
+          fi
+          echo "✅ Secrets present"
+          echo "VM: ${VM_NAME} | node: ${{ inputs.proxmox_node }} | vnet5000 VLAN ${{ inputs.vlan_tag }}"
+          echo "Sizing: ${{ inputs.vm_cores }} vCPU / ${{ inputs.vm_memory }} MB"
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.6.6
+          terraform_wrapper: false
+
+      - name: Build cloud-init seed ISO
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq cloud-image-utils
+          ./scripts/build-niosx-seed.sh \
+            --hostname "${VM_NAME}" \
+            --out live/demos/niosx-proxmox/seed.iso
+
+      - name: Restore Terraform state cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            live/demos/niosx-proxmox/.terraform
+            live/demos/niosx-proxmox/.terraform.lock.hcl
+            live/demos/niosx-proxmox/terraform.tfstate
+            live/demos/niosx-proxmox/terraform.tfstate.backup
+          key: tfstate-niosx-${{ inputs.vm_name }}
+          restore-keys: |
+            tfstate-niosx-
+
+      - name: Terraform ${{ inputs.action }}
+        id: tf
+        working-directory: live/demos/niosx-proxmox
+        run: |
+          set -euo pipefail
+          NODE="${{ inputs.proxmox_node }}"
+          [ "${NODE}" = "auto" ] && NODE=""
+
+          terraform init -input=false -no-color -reconfigure
+
+          terraform ${{ inputs.action }} -auto-approve -input=false -no-color \
+            -var="proxmox_endpoint=${PROXMOX_ENDPOINT}" \
+            -var="proxmox_api_token=${PROXMOX_API_TOKEN}" \
+            -var="proxmox_node=${NODE}" \
+            -var="vm_name=${VM_NAME}" \
+            -var="vlan_tag=${{ inputs.vlan_tag }}" \
+            -var="vm_cores=${{ inputs.vm_cores }}" \
+            -var="vm_memory=${{ inputs.vm_memory }}"
+
+          if [ "${{ inputs.action }}" = "apply" ]; then
+            {
+              echo "vm_id=$(terraform output -raw vm_id)"
+              echo "node=$(terraform output -raw node_name)"
+              echo "mac=$(terraform output -raw mac_address)"
+            } >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Save Terraform state cache
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            live/demos/niosx-proxmox/.terraform
+            live/demos/niosx-proxmox/.terraform.lock.hcl
+            live/demos/niosx-proxmox/terraform.tfstate
+            live/demos/niosx-proxmox/terraform.tfstate.backup
+          key: tfstate-niosx-${{ inputs.vm_name }}-${{ github.run_id }}
+
+      - name: Verify VM is running
+        if: ${{ inputs.action == 'apply' }}
+        id: verify
+        run: |
+          NODE="${{ steps.tf.outputs.node }}"
+          VMID="${{ steps.tf.outputs.vm_id }}"
+          HOST=$(echo "${PROXMOX_ENDPOINT}" | sed -e 's#^https\?://##' -e 's#/.*$##')
+          STATUS=$(curl -sk --max-time 30 \
+            -H "Authorization: PVEAPIToken=${PROXMOX_API_TOKEN}" \
+            "https://${HOST}/api2/json/nodes/${NODE}/qemu/${VMID}/status/current" \
+            | jq -r '.data.status // "unknown"')
+          echo "status=${STATUS}" >> "$GITHUB_OUTPUT"
+          echo "VM ${VMID} on ${NODE}: ${STATUS}"
+          [ "${STATUS}" = "running" ] || echo "::warning::VM is not running (status: ${STATUS})"
+
+      - name: Job Summary
+        if: always()
+        run: |
+          {
+            echo "# 🔷 NIOS-X on Proxmox"
+            echo ""
+            echo '```'
+            echo "NIOS-X-TEMPLATE (1061)  --clone-->  ${VM_NAME}"
+            echo "        |                              |"
+            echo "        |                        cloud-init seed ISO"
+            echo "        |                          host_setup.jointoken"
+            echo "        v                              v"
+            echo "  pve-fsn1-dc17              vnet5000 / VLAN ${{ inputs.vlan_tag }}"
+            echo "                                       |"
+            echo "                                       v"
+            echo "                            Infoblox Portal (NIOS-X join)"
+            echo '```'
+            echo ""
+            if [ "${{ inputs.action }}" = "apply" ]; then
+              echo "| Property | Value |"
+              echo "|---|---|"
+              echo "| VM name | \`${VM_NAME}\` |"
+              echo "| VMID | \`${{ steps.tf.outputs.vm_id }}\` |"
+              echo "| Node | \`${{ steps.tf.outputs.node }}\` |"
+              echo "| MAC | \`${{ steps.tf.outputs.mac }}\` |"
+              echo "| Bridge / VLAN | \`vnet5000\` / \`${{ inputs.vlan_tag }}\` |"
+              echo "| Sizing | ${{ inputs.vm_cores }} vCPU / ${{ inputs.vm_memory }} MB |"
+              echo "| Power state | \`${{ steps.verify.outputs.status }}\` |"
+              echo ""
+              echo "The server joins the Infoblox Portal once it has DHCP on VLAN ${{ inputs.vlan_tag }}."
+              echo "Check **Infrastructure → NIOS-X Servers** in the portal."
+            else
+              echo "🧹 Destroyed \`${VM_NAME}\` and removed its cloud-init seed ISO."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

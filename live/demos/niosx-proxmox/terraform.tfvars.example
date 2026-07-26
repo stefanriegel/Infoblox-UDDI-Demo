@@ -1,0 +1,18 @@
+# Copy to terraform.tfvars (gitignored) for local runs.
+# Build the seed ISO first:
+#   NIOSX_JOIN_TOKEN=<token> ../../../scripts/build-niosx-seed.sh --hostname niosx-demo --out seed.iso
+
+proxmox_endpoint  = "https://pve-fsn1-dc13.infra.blox42.rocks:8006/"
+proxmox_api_token = "root@pam!terraform=00000000-0000-0000-0000-000000000000"
+
+vm_name   = "niosx-demo"
+vm_cores  = 4
+vm_memory = 8192
+
+# Empty = auto-pick the first online node.
+proxmox_node = ""
+
+network_bridge = "vnet5000"
+vlan_tag       = 32
+
+seed_iso_path = "seed.iso"

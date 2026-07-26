@@ -12,6 +12,9 @@ override.tf.json
 *.tfvars
 *.tfvars.json
 
+# cloud-init seed images (contain the NIOS-X join token)
+*.iso
+
 # macOS
 .DS_Store
 

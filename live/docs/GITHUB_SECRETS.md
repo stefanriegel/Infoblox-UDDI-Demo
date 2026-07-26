@@ -123,6 +123,25 @@ gcloud iam service-accounts keys create key.json \
   --iam-account=github-actions-uddi@<project-id>.iam.gserviceaccount.com
 ```
 
+### Proxmox / NIOS-X Configuration (for NIOS-X demo)
+
+| Secret Name | Value | Description |
+|------------|-------|-------------|
+| `PROXMOX_ENDPOINT` | `https://pve-fsn1-dc13.infra.blox42.rocks:8006/` | Proxmox VE API endpoint |
+| `PROXMOX_API_TOKEN` | `user@realm!tokenid=<uuid>` | Proxmox API token, full string including the secret |
+| `NIOSX_JOIN_TOKEN` | `<join-token>` | NIOS-X join token from the Infoblox Portal |
+
+**Required Proxmox privileges** (on `/` or the pool holding the template):
+- `VM.Allocate`, `VM.Clone`, `VM.Config.*`, `VM.PowerMgmt`, `VM.Audit`
+- `Datastore.AllocateSpace`, `Datastore.AllocateTemplate`, `Datastore.Audit`
+- `SDN.Use` (for `vnet5000`)
+- `Sys.Audit` (node listing for auto node selection)
+
+**Get the join token:** Infoblox Portal → **Infrastructure → NIOS-X Servers → Create → Join Token**.
+
+**Note:** No SSH access to the Proxmox nodes is needed — the cloud-init seed ISO
+is uploaded through the API. See `README-NIOSX-DEMO.md`.
+
 ### Variables (not secrets)
 
 Navigate to: **Repository Settings → Secrets and variables → Actions → Variables**
