@@ -8,7 +8,7 @@ azure_location   = "germanywestcentral"
 name             = "niosx-azure-demo"
 niosx_join_token = "<join-token-from-infoblox-portal>"
 
-vm_size       = "Standard_B4als_v2"
+vm_size       = "Standard_F4s_v2"
 image_version = "4.1.10"
 os_disk_type  = "StandardSSD_LRS"
 

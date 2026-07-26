@@ -26,13 +26,14 @@ variable "niosx_join_token" {
   }
 }
 
-# Cheapest size in germanywestcentral clearing the 3 core / 4 GB floor.
-# B-series CPU is credit-based; Standard_D4ls_v5 is the cheapest dedicated
-# alternative at the same 4 vCPU / 8 GB.
+# Cheapest size in germanywestcentral that clears the 3 core / 4 GB floor AND
+# has quota on this subscription. Basv2, DLSv5, DSv5 and DASv5 all sit at a
+# limit of 0 cores there; BS, FSv2 and DSv3 have 10. F4s_v2 gives dedicated CPU
+# for ~$1.50/mo more than the burstable B4ms.
 variable "vm_size" {
-  description = "Azure VM size - at least 3 vCPU and 4 GB, Gen2 capable"
+  description = "Azure VM size - at least 3 vCPU and 4 GB, Gen2 capable, with regional quota"
   type        = string
-  default     = "Standard_B4als_v2"
+  default     = "Standard_F4s_v2"
 }
 
 variable "image_version" {

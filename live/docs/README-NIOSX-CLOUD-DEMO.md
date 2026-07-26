@@ -53,16 +53,24 @@ difference is not worth credit-based CPU. Two-vCPU types such as `t3a.large`
 
 ### Azure — germanywestcentral (Frankfurt)
 
-| size | vCPU / RAM | USD/mo |
-|---|---|---|
-| **Standard_B4als_v2** (default) | 4 / 8 | 111.69 |
-| Standard_D4ls_v5 | 4 / 8 | 141.62 |
-| Standard_F4s_v2 | 4 / 8 | 141.62 |
+Size choice here is constrained by **quota**, not just price. On this
+subscription the `Basv2`, `DLSv5`, `DSv5` and `DASv5` families all have a core
+limit of **0** in GermanyWestCentral, so the cheapest sizes on paper cannot be
+deployed at all. `BS`, `FSv2` and `DSv3` have a limit of 10.
 
-`Standard_B4als_v2` is the cheapest size clearing the floor and is the default
-by choice. It is **burstable** — CPU is credit-based, so sustained query load
-can throttle. Infoblox states that NIOS-X resources should be dedicated; switch
-to `Standard_D4ls_v5` for anything beyond a short demo.
+| size | vCPU / RAM | quota | USD/mo |
+|---|---|---|---|
+| Standard_B4als_v2 | 4 / 8 | 0 — unusable | 111.69 |
+| Standard_B4ms | 4 / 16 | 10 | 140.16 |
+| **Standard_F4s_v2** (default) | 4 / 8 | 10 | 141.62 |
+| Standard_D4s_v3 | 4 / 16 | 10 | 167.90 |
+
+`Standard_F4s_v2` is the default: dedicated CPU for ~$1.50/mo more than the
+burstable `Standard_B4ms`, and Infoblox states NIOS-X resources should be
+dedicated. To reach the cheaper `Standard_B4als_v2`, request a quota increase
+for the `standardBasv2Family` in GermanyWestCentral first.
+
+`Total Regional vCPUs` is 10, so one 4-vCPU server fits with room to spare.
 
 ## Networking
 

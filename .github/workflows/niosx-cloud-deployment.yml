@@ -24,15 +24,14 @@ on:
         type: boolean
         default: false
       azure_vm_size:
-        description: "Azure VM size (B-series is burstable)"
+        description: "Azure VM size (only families with quota in GermanyWestCentral)"
         required: true
         type: choice
         options:
-          - "Standard_B4als_v2"
-          - "Standard_D4ls_v5"
           - "Standard_F4s_v2"
-          - "Standard_D4as_v5"
-        default: "Standard_B4als_v2"
+          - "Standard_B4ms"
+          - "Standard_D4s_v3"
+        default: "Standard_F4s_v2"
       name_suffix:
         description: "Optional suffix to run several demos side by side"
         required: false
