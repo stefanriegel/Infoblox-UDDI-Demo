@@ -17,7 +17,6 @@ data "aws_availability_zones" "available" {
 }
 
 locals {
-  # Same payload the Proxmox demo writes into its NoCloud seed - on EC2 it is
   # handed to cloud-init directly as user-data.
   user_data = <<-EOT
     #cloud-config
@@ -52,8 +51,6 @@ resource "aws_internet_gateway" "main" {
   }
 }
 
-# Single public subnet spanning the whole VPC CIDR - the server needs a routable
-# address to reach the Infoblox Portal.
 resource "aws_subnet" "public" {
   vpc_id            = aws_vpc.main.id
   cidr_block        = aws_vpc.main.cidr_block
@@ -84,8 +81,6 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-# Egress is what the join actually needs. DNS ingress is scoped to the VPC by
-# default rather than opened to the internet.
 resource "aws_security_group" "niosx" {
   name        = "${var.name}-sg"
   description = "NIOS-X server - outbound to Infoblox Portal, DNS from ${var.dns_client_cidr}"
