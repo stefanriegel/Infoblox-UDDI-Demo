@@ -17,7 +17,7 @@ provider "azurerm" {
 }
 
 locals {
-  # Identical payload to the AWS and Proxmox demos; Azure takes it as custom_data.
+  # custom_data for Join Token.
   user_data = <<-EOT
     #cloud-config
     host_setup:
