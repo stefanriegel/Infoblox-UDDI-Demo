@@ -27,7 +27,7 @@ on:
         description: "VLAN tag on vnet5000"
         required: true
         type: string
-        default: "32"
+        default: "30"
       vm_cores:
         description: "vCPU cores"
         required: true
