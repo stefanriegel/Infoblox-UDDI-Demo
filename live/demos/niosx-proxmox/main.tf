@@ -32,7 +32,7 @@ locals {
 }
 
 # NoCloud seed image holding the NIOS-X cloud-init user-data (join token).
-# Uploaded through the Proxmox API - no SSH access to the node required.
+# Uploaded through the Proxmox API.
 # Built beforehand by scripts/build-niosx-seed.sh.
 resource "proxmox_virtual_environment_file" "niosx_seed" {
   content_type = "iso"
@@ -84,8 +84,6 @@ resource "proxmox_virtual_environment_vm" "niosx" {
     interface = var.cdrom_interface
   }
 
-  # Single management NIC, matching the Infoblox KVM reference deployment.
-  # The template carries a second unused NIC that is not cloned forward.
   network_device {
     bridge  = var.network_bridge
     vlan_id = var.vlan_tag
